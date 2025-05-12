@@ -1,0 +1,54 @@
+{
+  "appName": "AI Chat App",
+  "chat": {
+    "typeMessage": "Type a message...",
+    "noMessages": "No messages yet",
+    "startConversation": "Send a message to start the conversation",
+    "online": "Online",
+    "offline": "Offline",
+    "tabs": {
+      "all": "All",
+      "users": "Users",
+      "ai": "AI"
+    },
+    "actions": {
+      "clearMessages": "Clear Messages",
+      "deleteConversation": "Delete Conversation"
+    },
+    "placeholder": {
+      "title": "Select a conversation",
+      "message": "Choose a conversation from the sidebar or start a new chat to begin messaging"
+    }
+  },
+  "sidebar": {
+    "newAgent": "Create New AI Agent",
+    "newGroup": "Create Group",
+    "search": "Search..."
+  },
+  "buttons": {
+    "send": "Send",
+    "call": "Call",
+    "videoCall": "Video Call",
+    "menu": "Menu"
+  },
+  "logout": {
+    "title": "Confirm Logout",
+    "message": "Are you sure you want to log out of your account?",
+    "cancel": "Cancel",
+    "confirm": "Logout"
+  },
+  "settings": {
+    "title": "Settings",
+    "profile": "Profile Settings",
+    "notifications": "Notification Settings",
+    "privacy": "Privacy & Security",
+    "translation": "Translation Settings",
+    "users": "User Management",
+    "aiAgents": "AI Agents",
+    "backend": "Backend Settings"
+  },
+  "user": {
+    "profile": "Profile",
+    "email": "Email"
+  }
+} 
