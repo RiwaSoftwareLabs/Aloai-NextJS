@@ -7,8 +7,8 @@
     "online": "Online",
     "offline": "Offline",
     "tabs": {
-      "all": "All",
-      "users": "Users",
+      "all": "Chats",
+      "users": "Friends",
       "ai": "AI"
     },
     "actions": {

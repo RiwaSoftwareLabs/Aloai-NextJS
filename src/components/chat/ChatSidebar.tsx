@@ -42,7 +42,7 @@ const ICON_COLORS = {
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('All');
+  const [activeTab, setActiveTab] = useState('Chats');
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<string | null>(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -102,8 +102,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   
   const filteredChats = DUMMY_CHATS.filter(chat => 
     chat.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (activeTab === 'All' || 
-     (activeTab === 'Users' && !chat.isAI) || 
+    (activeTab === 'Chats' || 
+     (activeTab === 'Friends' && !chat.isAI) || 
      (activeTab === 'AI' && chat.isAI))
   );
 
@@ -253,17 +253,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       {/* Tabs */}
       <div className="flex px-4 py-2">
         <button 
-          onClick={() => setActiveTab('All')}
+          onClick={() => setActiveTab('Chats')}
           className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
-            activeTab === 'All' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
+            activeTab === 'Chats' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           {t('chat.tabs.all')}
         </button>
         <button 
-          onClick={() => setActiveTab('Users')}
+          onClick={() => setActiveTab('Friends')}
           className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
-            activeTab === 'Users' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
+            activeTab === 'Friends' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           {t('chat.tabs.users')}

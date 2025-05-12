@@ -22,6 +22,7 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
       displayName
     };
     
+    // Step 1: Register the user with Supabase Auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -31,6 +32,24 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
     });
     
     if (error) throw error;
+    
+    // Step 2: Insert the user data into the users table
+    if (data.user) {
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert([
+          { 
+            user_id: data.user.id,
+            display_name: displayName || email.split('@')[0],
+            email: email
+          }
+        ]);
+      
+      if (insertError) {
+        console.error('Error inserting user data into users table:', insertError);
+        // Continue anyway since auth account was created successfully
+      }
+    }
     
     return {
       success: true,
