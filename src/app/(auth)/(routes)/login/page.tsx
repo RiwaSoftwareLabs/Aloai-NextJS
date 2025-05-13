@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, CheckCircle, Loader2, Eye, EyeOff } from "lucide-react";
@@ -10,7 +10,7 @@ type ErrorWithMessage = {
   message?: string;
 };
 
-const LoginPage = () => {
+const LoginContent = () => {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -176,6 +176,18 @@ const LoginPage = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const LoginPage = () => {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 };
 

@@ -36,7 +36,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
         >
           {message.isImage ? (
             <div className="relative">
-              <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" />
+              <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" aria-label="Image icon" />
               <div className="w-full h-40 bg-gray-200 rounded flex items-center justify-center">
                 {/* Image placeholder - in a real app you'd have the actual image */}
                 <p className="text-sm text-gray-500">Image</p>
