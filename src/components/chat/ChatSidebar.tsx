@@ -53,6 +53,35 @@ const ICON_COLORS = {
   logout: "#f43f5e", // Rose/Red
 };
 
+// Tab button component
+const TabButton = ({ 
+  label, 
+  isActive, 
+  onClick, 
+  notificationCount = 0 
+}: { 
+  label: string; 
+  isActive: boolean; 
+  onClick: () => void;
+  notificationCount?: number;
+}) => (
+  <button
+    onClick={onClick}
+    className={`flex-1 py-2 text-sm font-medium relative ${
+      isActive 
+        ? 'bg-purple-100 text-purple-600' 
+        : 'text-gray-600 hover:bg-gray-100'
+    } rounded-md transition-colors text-center`}
+  >
+    {notificationCount > 0 && (
+      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+        {notificationCount}
+      </span>
+    )}
+    {label}
+  </button>
+);
+
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('Chats');
@@ -144,7 +173,18 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     
     fetchUserProfile();
     
-    return () => setIsMounted(false);
+    // Set up an interval to refresh friend data every 30 seconds
+    // This ensures data stays updated even if another client adds or accepts a friend request
+    const refreshInterval = setInterval(() => {
+      if (userId) {
+        fetchFriendData(userId);
+      }
+    }, 30000); // 30 seconds
+    
+    return () => {
+      setIsMounted(false);
+      clearInterval(refreshInterval);
+    };
   }, []);
   
   const handleAcceptFriendRequest = async (friendshipId: string) => {
@@ -161,6 +201,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   
   const handleDeclineFriendRequest = async (friendshipId: string) => {
     try {
+      // This now completely removes the friendship record from the database
       const result = await declineFriendRequest(friendshipId);
       if (result.success && userId) {
         // Refresh the friend data
@@ -509,37 +550,30 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tab navigation */}
       <div className="flex px-4 py-2">
-        <button 
-          onClick={() => setActiveTab('Chats')}
-          className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
-            activeTab === 'Chats' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          {t('chat.tabs.all')}
-        </button>
-        <button 
-          onClick={() => setActiveTab('Friends')}
-          className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
-            activeTab === 'Friends' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
-          } relative`}
-        >
-          {pendingRequests.length > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-              {pendingRequests.length}
-            </span>
-          )}
-          {t('chat.tabs.users')}
-        </button>
-        <button 
-          onClick={() => setActiveTab('AI')}
-          className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
-            activeTab === 'AI' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          {t('chat.tabs.ai')}
-        </button>
+        <TabButton 
+          label={t('chat.tabs.all')}
+          isActive={activeTab === 'Chats'} 
+          onClick={() => setActiveTab('Chats')} 
+        />
+        <TabButton 
+          label={t('chat.tabs.users')}
+          isActive={activeTab === 'Friends'} 
+          notificationCount={pendingRequests.length}
+          onClick={() => {
+            setActiveTab('Friends');
+            // Refresh friend data when switching to Friends tab
+            if (userId) {
+              fetchFriendData(userId);
+            }
+          }} 
+        />
+        <TabButton 
+          label={t('chat.tabs.ai')}
+          isActive={activeTab === 'AI'} 
+          onClick={() => setActiveTab('AI')} 
+        />
       </div>
 
       {/* Content area */}
@@ -581,15 +615,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       {/* Modals */}
       {isMounted && (
         <>
-          <LogoutModal 
-            isOpen={showLogoutModal}
-            onClose={() => setShowLogoutModal(false)}
-            onConfirm={handleLogout}
-          />
-          <AddFriendModal 
-            isOpen={showAddFriendModal}
-            onClose={() => setShowAddFriendModal(false)}
-          />
+          {showLogoutModal && (
+            <LogoutModal 
+              isOpen={showLogoutModal}
+              onClose={() => setShowLogoutModal(false)}
+              onConfirm={handleLogout}
+            />
+          )}
+          {showAddFriendModal && (
+            <AddFriendModal 
+              isOpen={showAddFriendModal}
+              onClose={() => setShowAddFriendModal(false)}
+              onFriendRequestSent={() => {
+                if (userId) {
+                  fetchFriendData(userId);
+                }
+              }}
+            />
+          )}
         </>
       )}
     </div>

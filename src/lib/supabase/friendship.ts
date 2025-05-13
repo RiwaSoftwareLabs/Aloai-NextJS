@@ -18,7 +18,6 @@ export type FriendRequestResponse = {
 export type FriendshipStatus = {
   PENDING: number;
   ACCEPTED: number;
-  DECLINED: number;
 };
 
 // User types
@@ -44,18 +43,10 @@ export interface Friend {
   createdAt: string;
 }
 
-// Database response types
-interface DbUser {
-  user_id: string;
-  display_name: string;
-  email: string;
-}
-
 // Constants for friendship status
 export const FRIENDSHIP_STATUS: FriendshipStatus = {
   PENDING: 0,
-  ACCEPTED: 1,
-  DECLINED: 2
+  ACCEPTED: 1
 };
 
 /**
@@ -205,6 +196,7 @@ export const acceptFriendRequest = async (friendshipId: string): Promise<FriendR
  */
 export const declineFriendRequest = async (friendshipId: string): Promise<FriendRequestResponse> => {
   try {
+    // Simply delete the record instead of updating status to DECLINED
     const { error } = await supabase
       .from('friendships')
       .delete()
@@ -233,37 +225,44 @@ export const declineFriendRequest = async (friendshipId: string): Promise<Friend
  */
 export const getPendingFriendRequests = async (userId: string): Promise<{ success: boolean; data: FriendRequest[]; error: unknown | null }> => {
   try {
-    const { data, error } = await supabase
+    // Manual join approach using two separate queries instead of foreign key references
+    const { data: friendshipData, error: friendshipError } = await supabase
       .from('friendships')
-      .select(`
-        id,
-        status,
-        created_at,
-        users!friendships_requester_id_fkey (
-          user_id,
-          display_name,
-          email
-        )
-      `)
+      .select('*')
       .eq('receiver_id', userId)
       .eq('status', FRIENDSHIP_STATUS.PENDING);
 
-    if (error) throw error;
+    if (friendshipError) throw friendshipError;
+    
+    if (!friendshipData || friendshipData.length === 0) {
+      return { success: true, data: [], error: null };
+    }
 
-    // Properly format the data to match the FriendRequest interface
-    const formattedData: FriendRequest[] = (data || []).map(item => {
-      const userData = item.users as unknown as DbUser;
+    // Get all requester users
+    const requesterIds = friendshipData.map(item => item.requester_id);
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .in('user_id', requesterIds);
+      
+    if (userError) throw userError;
+
+    // Map the data manually
+    const formattedData: FriendRequest[] = friendshipData.map(friendship => {
+      const user = userData?.find(u => u.user_id === friendship.requester_id);
       return {
-        id: item.id,
-        status: item.status,
-        created_at: item.created_at,
+        id: friendship.id,
+        status: friendship.status,
+        created_at: friendship.created_at,
         users: {
-          user_id: userData.user_id,
-          display_name: userData.display_name,
-          email: userData.email
+          user_id: user?.user_id || '',
+          display_name: user?.display_name || '',
+          email: user?.email || ''
         }
       };
     });
+    
+    console.log('Pending friend requests:', formattedData);
 
     return { 
       success: true, 
@@ -271,6 +270,7 @@ export const getPendingFriendRequests = async (userId: string): Promise<{ succes
       error: null
     };
   } catch (error) {
+    console.error('Error getting pending friend requests:', error);
     return { 
       success: false, 
       data: [], 
@@ -284,37 +284,44 @@ export const getPendingFriendRequests = async (userId: string): Promise<{ succes
  */
 export const getSentFriendRequests = async (userId: string): Promise<{ success: boolean; data: FriendRequest[]; error: unknown | null }> => {
   try {
-    const { data, error } = await supabase
+    // Manual join approach using two separate queries instead of foreign key references
+    const { data: friendshipData, error: friendshipError } = await supabase
       .from('friendships')
-      .select(`
-        id,
-        status,
-        created_at,
-        users!friendships_receiver_id_fkey (
-          user_id,
-          display_name,
-          email
-        )
-      `)
+      .select('*')
       .eq('requester_id', userId)
       .eq('status', FRIENDSHIP_STATUS.PENDING);
 
-    if (error) throw error;
+    if (friendshipError) throw friendshipError;
+    
+    if (!friendshipData || friendshipData.length === 0) {
+      return { success: true, data: [], error: null };
+    }
 
-    // Properly format the data to match the FriendRequest interface
-    const formattedData: FriendRequest[] = (data || []).map(item => {
-      const userData = item.users as unknown as DbUser;
+    // Get all receiver users
+    const receiverIds = friendshipData.map(item => item.receiver_id);
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .in('user_id', receiverIds);
+      
+    if (userError) throw userError;
+
+    // Map the data manually
+    const formattedData: FriendRequest[] = friendshipData.map(friendship => {
+      const user = userData?.find(u => u.user_id === friendship.receiver_id);
       return {
-        id: item.id,
-        status: item.status,
-        created_at: item.created_at,
+        id: friendship.id,
+        status: friendship.status,
+        created_at: friendship.created_at,
         users: {
-          user_id: userData.user_id,
-          display_name: userData.display_name,
-          email: userData.email
+          user_id: user?.user_id || '',
+          display_name: user?.display_name || '',
+          email: user?.email || ''
         }
       };
     });
+
+    console.log('Sent friend requests:', formattedData);
 
     return { 
       success: true, 
@@ -322,6 +329,7 @@ export const getSentFriendRequests = async (userId: string): Promise<{ success: 
       error: null
     };
   } catch (error) {
+    console.error('Error getting sent friend requests:', error);
     return { 
       success: false, 
       data: [], 
@@ -335,67 +343,77 @@ export const getSentFriendRequests = async (userId: string): Promise<{ success: 
  */
 export const getFriends = async (userId: string): Promise<{ success: boolean; data: Friend[]; error: unknown | null }> => {
   try {
-    // Get friends where user is the requester
-    const { data: sentRequests, error: sentError } = await supabase
+    // Log for debugging
+    console.log(`Getting friends for user ${userId}`);
+    
+    // Get friendships where user is the requester - manual approach
+    const { data: sentFriendships, error: sentError } = await supabase
       .from('friendships')
-      .select(`
-        id,
-        status,
-        created_at,
-        users!friendships_receiver_id_fkey (
-          user_id,
-          display_name,
-          email
-        )
-      `)
+      .select('*')
       .eq('requester_id', userId)
       .eq('status', FRIENDSHIP_STATUS.ACCEPTED);
 
     if (sentError) throw sentError;
-
-    // Get friends where user is the receiver
-    const { data: receivedRequests, error: receivedError } = await supabase
+    
+    // Get friendships where user is the receiver - manual approach
+    const { data: receivedFriendships, error: receivedError } = await supabase
       .from('friendships')
-      .select(`
-        id,
-        status,
-        created_at,
-        users!friendships_requester_id_fkey (
-          user_id,
-          display_name,
-          email
-        )
-      `)
+      .select('*')
       .eq('receiver_id', userId)
       .eq('status', FRIENDSHIP_STATUS.ACCEPTED);
 
     if (receivedError) throw receivedError;
+    
+    // If no friendships, return empty array
+    if ((!sentFriendships || sentFriendships.length === 0) && 
+        (!receivedFriendships || receivedFriendships.length === 0)) {
+      return { success: true, data: [], error: null };
+    }
+    
+    // Get all user IDs we need to fetch
+    const receiverIds = sentFriendships?.map(item => item.receiver_id) || [];
+    const requesterIds = receivedFriendships?.map(item => item.requester_id) || [];
+    const allUserIds = [...new Set([...receiverIds, ...requesterIds])];
+    
+    // Fetch all relevant users in one query
+    const { data: usersData, error: usersError } = await supabase
+      .from('users')
+      .select('*')
+      .in('user_id', allUserIds);
+      
+    if (usersError) throw usersError;
+    
+    console.log('Users data for friends:', usersData);
 
-    // Combine both sets of data with proper typing
+    // Build the friends list
     const friends: Friend[] = [
-      ...(sentRequests || []).map(request => {
-        const userData = request.users as unknown as DbUser;
+      // Friends where current user is the requester
+      ...(sentFriendships || []).map(friendship => {
+        const user = usersData?.find(u => u.user_id === friendship.receiver_id);
         return {
-          id: request.id,
-          friendshipId: request.id,
-          userId: userData.user_id,
-          displayName: userData.display_name,
-          email: userData.email,
-          createdAt: request.created_at
+          id: friendship.id,
+          friendshipId: friendship.id,
+          userId: user?.user_id || '',
+          displayName: user?.display_name || '',
+          email: user?.email || '',
+          createdAt: friendship.created_at
         };
       }),
-      ...(receivedRequests || []).map(request => {
-        const userData = request.users as unknown as DbUser;
+      // Friends where current user is the receiver
+      ...(receivedFriendships || []).map(friendship => {
+        const user = usersData?.find(u => u.user_id === friendship.requester_id);
         return {
-          id: request.id,
-          friendshipId: request.id,
-          userId: userData.user_id,
-          displayName: userData.display_name,
-          email: userData.email,
-          createdAt: request.created_at
+          id: friendship.id,
+          friendshipId: friendship.id,
+          userId: user?.user_id || '',
+          displayName: user?.display_name || '',
+          email: user?.email || '',
+          createdAt: friendship.created_at
         };
       })
     ];
+
+    console.log('Combined friends list:', friends);
 
     return { 
       success: true, 
@@ -403,6 +421,7 @@ export const getFriends = async (userId: string): Promise<{ success: boolean; da
       error: null
     };
   } catch (error) {
+    console.error('Error getting friends:', error);
     return { 
       success: false, 
       data: [], 

@@ -8,9 +8,10 @@ import { getCurrentUser } from '@/lib/supabase/auth';
 interface AddFriendModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onFriendRequestSent?: () => void;
 }
 
-const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
+const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose, onFriendRequestSent }) => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -41,6 +42,11 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
       if (result.success) {
         setMessage({ text: result.message, type: 'success' });
         setEmail('');
+        
+        // Call the callback to refresh friend data
+        if (onFriendRequestSent) {
+          onFriendRequestSent();
+        }
       } else {
         // If user not found, send invitation
         if (result.message.includes('User not found')) {
