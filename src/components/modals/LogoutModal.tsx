@@ -22,7 +22,7 @@ const LogoutModal: React.FC<LogoutModalProps> = ({
 
   return createPortal(
     <div 
-      className="fixed inset-0 bg-black/10 z-[100] flex items-center justify-center modal-backdrop"
+      className="fixed inset-0 backdrop-blur-sm bg-gray-500/30 z-[100] flex items-center justify-center modal-backdrop"
       onClick={onClose}
       style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
     >

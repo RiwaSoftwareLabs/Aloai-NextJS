@@ -9,11 +9,24 @@ import {
   LogOut, 
   UserPlus,
   Users,
-  Bot
+  Bot,
+  Clock,
+  Check,
+  X
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LogoutModal from '../modals/LogoutModal';
+import AddFriendModal from '../modals/AddFriendModal';
 import { logoutUser, checkSession } from '@/lib/supabase/auth';
+import { 
+  getPendingFriendRequests,
+  getSentFriendRequests,
+  getFriends,
+  acceptFriendRequest, 
+  declineFriendRequest,
+  FriendRequest,
+  Friend
+} from '@/lib/supabase/friendship';
 
 interface ChatSidebarProps {
   onCloseMobile: () => void;
@@ -46,7 +59,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<string | null>(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
   const [userProfile, setUserProfile] = useState<{
     displayName: string | null;
     email: string | null;
@@ -60,6 +78,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   const pathname = usePathname();
   const router = useRouter();
   const { t, isRTL } = useLanguage();
+  
+  // Function to fetch user's friend data
+  const fetchFriendData = async (userId: string) => {
+    try {
+      // Get pending friend requests
+      const pendingResult = await getPendingFriendRequests(userId);
+      if (pendingResult.success) {
+        setPendingRequests(pendingResult.data);
+      }
+      
+      // Get sent friend requests
+      const sentResult = await getSentFriendRequests(userId);
+      if (sentResult.success) {
+        setSentRequests(sentResult.data);
+      }
+      
+      // Get friends
+      const friendsResult = await getFriends(userId);
+      if (friendsResult.success) {
+        setFriends(friendsResult.data);
+      }
+    } catch (error) {
+      console.error('Error fetching friend data:', error);
+    }
+  };
   
   useEffect(() => {
     setIsMounted(true);
@@ -89,6 +132,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
             email,
             initials,
           });
+          
+          // Set user ID and fetch friend data
+          setUserId(user.id);
+          fetchFriendData(user.id);
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -99,6 +146,30 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     
     return () => setIsMounted(false);
   }, []);
+  
+  const handleAcceptFriendRequest = async (friendshipId: string) => {
+    try {
+      const result = await acceptFriendRequest(friendshipId);
+      if (result.success && userId) {
+        // Refresh the friend data
+        fetchFriendData(userId);
+      }
+    } catch (error) {
+      console.error('Error accepting friend request:', error);
+    }
+  };
+  
+  const handleDeclineFriendRequest = async (friendshipId: string) => {
+    try {
+      const result = await declineFriendRequest(friendshipId);
+      if (result.success && userId) {
+        // Refresh the friend data
+        fetchFriendData(userId);
+      }
+    } catch (error) {
+      console.error('Error declining friend request:', error);
+    }
+  };
   
   const filteredChats = DUMMY_CHATS.filter(chat => 
     chat.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -127,6 +198,192 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       console.error('Logout error:', error);
       // Redirect to login on error
       router.push('/login');
+    }
+  };
+
+  // What to display in the main chat list area based on the active tab
+  const renderTabContent = () => {
+    if (activeTab === 'Friends') {
+      return (
+        <div className="flex-1 overflow-y-auto">
+          {/* Pending friend requests */}
+          {pendingRequests.length > 0 && (
+            <div className="mb-2">
+              <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Friend Requests ({pendingRequests.length})
+              </div>
+              {pendingRequests.map(request => (
+                <div key={request.id} className="px-4 py-3 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+                        {request.users.display_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-medium">{request.users.display_name}</h3>
+                        <p className="text-xs text-gray-500">{request.users.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleAcceptFriendRequest(request.id)}
+                        className="p-1.5 bg-green-500 text-white rounded-full hover:bg-green-600"
+                        title="Accept"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeclineFriendRequest(request.id)}
+                        className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600"
+                        title="Decline"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Sent friend requests */}
+          {sentRequests.length > 0 && (
+            <div className="mb-2">
+              <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Pending Invitations ({sentRequests.length})
+              </div>
+              {sentRequests.map(request => (
+                <div key={request.id} className="px-4 py-3 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
+                        {request.users.display_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center">
+                          <h3 className="font-medium text-gray-500">{request.users.display_name}</h3>
+                          <span className="ml-2 text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full">Invitation Sent</span>
+                        </div>
+                        <p className="text-xs text-gray-500">{request.users.email}</p>
+                      </div>
+                    </div>
+                    <div className="text-gray-400">
+                      <Clock className="h-4 w-4" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Friends list */}
+          <div>
+            <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Friends ({friends.length})
+            </div>
+            {friends.length === 0 ? (
+              <div className="text-center p-4 text-gray-500">
+                No friends yet
+              </div>
+            ) : (
+              friends.map(friend => (
+                <Link
+                  key={friend.id}
+                  href={`/?id=${friend.userId}`}
+                  className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
+                    pathname === `/?id=${friend.userId}` ? 'bg-gray-100' : ''
+                  }`}
+                  onClick={() => {
+                    if (window.innerWidth < 1024) { // lg breakpoint
+                      onCloseMobile();
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                        {friend.displayName.charAt(0).toUpperCase()}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-baseline">
+                        <h3 className="font-medium truncate">{friend.displayName}</h3>
+                      </div>
+                      <p className="text-sm text-gray-600 truncate">{friend.email}</p>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+          
+          {/* No friends or requests */}
+          {pendingRequests.length === 0 && sentRequests.length === 0 && friends.length === 0 && (
+            <div className="text-center p-8">
+              <div className="mb-4">
+                <UserPlus className="h-12 w-12 mx-auto text-gray-300" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-700 mb-1">No friends yet</h3>
+              <p className="text-gray-500 mb-4">Add friends to start chatting</p>
+              <button
+                onClick={() => setShowAddFriendModal(true)}
+                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+              >
+                Add Friend
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    } else {
+      // Original content for Chats and AI tabs
+      return (
+        <div className="flex-1 overflow-y-auto">
+          {filteredChats.length === 0 ? (
+            <div className="text-center p-4 text-gray-500">
+              No chats found
+            </div>
+          ) : (
+            filteredChats.map(chat => (
+              <Link
+                key={chat.id}
+                href={`/?id=${chat.id}`} 
+                className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
+                  pathname === `/?id=${chat.id}` ? 'bg-gray-100' : ''
+                }`}
+                onClick={() => {
+                  if (window.innerWidth < 1024) { // lg breakpoint
+                    onCloseMobile();
+                  }
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-shrink-0">
+                    <div className={`
+                      w-10 h-10 rounded-full flex items-center justify-center 
+                      ${chat.isAI ? 'bg-purple-100 text-purple-600' : 'bg-purple-500 text-white'}
+                    `}>
+                      {chat.name.charAt(0).toUpperCase()}
+                    </div>
+                    {chat.isAI && (
+                      <div className={`absolute -bottom-1 ${isRTL ? '-left-1' : '-right-1'} bg-purple-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs border-2 border-white`}>
+                        AI
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline">
+                      <h3 className="font-medium truncate">{chat.name}</h3>
+                      <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">{chat.time}</span>
+                    </div>
+                    <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
+                  </div>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      );
     }
   };
   
@@ -184,8 +441,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           )}
         </div>
         
+        {/* Add New User */}
         <div className="relative">
           <button 
+            onClick={() => setShowAddFriendModal(true)}
             className={`p-2.5 rounded-lg hover:bg-green-100 transition-all ${hoveredIcon === 'user' ? 'scale-110' : ''}`}
             onMouseEnter={() => {
               setActiveTooltip('user');
@@ -264,8 +523,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           onClick={() => setActiveTab('Friends')}
           className={`flex-1 py-2 text-center rounded-md transition-colors text-sm font-medium ${
             activeTab === 'Friends' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          } relative`}
         >
+          {pendingRequests.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+              {pendingRequests.length}
+            </span>
+          )}
           {t('chat.tabs.users')}
         </button>
         <button 
@@ -278,52 +542,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         </button>
       </div>
 
-      {/* Chat list */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredChats.length === 0 ? (
-          <div className="text-center p-4 text-gray-500">
-            No chats found
-          </div>
-        ) : (
-          filteredChats.map(chat => (
-            <Link
-              key={chat.id}
-              href={`/?id=${chat.id}`} 
-              className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
-                pathname === `/?id=${chat.id}` ? 'bg-gray-100' : ''
-              }`}
-              onClick={() => {
-                if (window.innerWidth < 1024) { // lg breakpoint
-                  onCloseMobile();
-                }
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="relative flex-shrink-0">
-                  <div className={`
-                    w-10 h-10 rounded-full flex items-center justify-center 
-                    ${chat.isAI ? 'bg-purple-100 text-purple-600' : 'bg-purple-500 text-white'}
-                  `}>
-                    {chat.name.charAt(0).toUpperCase()}
-                  </div>
-                  {chat.isAI && (
-                    <div className={`absolute -bottom-1 ${isRTL ? '-left-1' : '-right-1'} bg-purple-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs border-2 border-white`}>
-                      AI
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline">
-                    <h3 className="font-medium truncate">{chat.name}</h3>
-                    <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">{chat.time}</span>
-                  </div>
-                  <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
-                </div>
-              </div>
-            </Link>
-          ))
-        )}
-      </div>
+      {/* Content area */}
+      {renderTabContent()}
 
       {/* Bottom section with user profile */}
       <div className="border-t border-gray-200 p-4">
@@ -358,13 +578,19 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         </div>
       </div>
 
-      {/* Use the separated LogoutModal component */}
+      {/* Modals */}
       {isMounted && (
-        <LogoutModal 
-          isOpen={showLogoutModal}
-          onClose={() => setShowLogoutModal(false)}
-          onConfirm={handleLogout}
-        />
+        <>
+          <LogoutModal 
+            isOpen={showLogoutModal}
+            onClose={() => setShowLogoutModal(false)}
+            onConfirm={handleLogout}
+          />
+          <AddFriendModal 
+            isOpen={showAddFriendModal}
+            onClose={() => setShowAddFriendModal(false)}
+          />
+        </>
       )}
     </div>
   );

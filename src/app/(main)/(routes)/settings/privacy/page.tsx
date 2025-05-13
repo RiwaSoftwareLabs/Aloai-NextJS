@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Lock, Shield, Eye, EyeOff } from 'lucide-react';
+import { Lock, Shield, Eye } from 'lucide-react';
 
 const PrivacySettingsPage = () => {
   const [settings, setSettings] = useState({
@@ -51,7 +51,7 @@ const PrivacySettingsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-sm">Online Status</p>
-                <p className="text-xs text-gray-500">Show when you're online</p>
+                <p className="text-xs text-gray-500">Show when you&apos;re online</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input 
@@ -67,7 +67,7 @@ const PrivacySettingsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-sm">Read Receipts</p>
-                <p className="text-xs text-gray-500">Let others know when you've read their messages</p>
+                <p className="text-xs text-gray-500">Let others know when you&apos;ve read their messages</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input 

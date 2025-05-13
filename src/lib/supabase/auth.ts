@@ -35,11 +35,12 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
     
     // Step 2: Insert the user data into the users table
     if (data.user) {
+      const userId = data.user.id;
       const { error: insertError } = await supabase
         .from('users')
         .insert([
           { 
-            user_id: data.user.id,
+            user_id: userId,
             display_name: displayName || email.split('@')[0],
             email: email
           }
@@ -183,11 +184,35 @@ export const logoutUser = async () => {
 
 export const getCurrentUser = async () => {
   try {
+    // First get the auth user data
     const { data: { user }, error } = await supabase.auth.getUser();
     
     if (error) throw error;
     
-    return { user, error: null };
+    if (!user) {
+      return { user: null, error: null };
+    }
+    
+    // Fetch the user details from the users table
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+    
+    if (userError) {
+      console.error('Error fetching user from users table:', userError);
+      // Return auth user data if users table fetch fails
+      return { user, error: null };
+    }
+    
+    // Combine auth user with users table data
+    const combinedUser = {
+      ...user,
+      profile: userData
+    };
+    
+    return { user: combinedUser, error: null };
   } catch (error) {
     console.error('Error getting current user:', error);
     return { user: null, error };
@@ -209,13 +234,44 @@ export const resetPassword = async (email: string) => {
   }
 };
 
+interface UserUpdateData {
+  display_name?: string;
+  [key: string]: string | number | boolean | null | undefined;
+}
+
 export const updateUserProfile = async (userData: { [key: string]: string | number | boolean | null | undefined }) => {
   try {
+    // First get the auth user data to make sure we have the ID
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError) throw authError;
+    if (!user) throw new Error("No authenticated user found");
+    
+    // Determine which fields go to auth.updateUser and which go to users table
+    const { display_name, ...otherFields } = userData as UserUpdateData;
+    
+    // Update auth user metadata
     const { data, error } = await supabase.auth.updateUser({
-      data: userData
+      data: otherFields
     });
     
     if (error) throw error;
+    
+    // Also update the users table if we have fields that should go there
+    if (display_name !== undefined) {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          display_name: display_name,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id);
+      
+      if (updateError) {
+        console.error('Error updating users table:', updateError);
+        throw updateError;
+      }
+    }
     
     return { success: true, data, error: null };
   } catch (error) {

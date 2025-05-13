@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { X, Users, UserPlus, Search, Check } from 'lucide-react';
+import { X, Users, Search, Check } from 'lucide-react';
 
 interface AddGroupDialogProps {
   isOpen: boolean;
