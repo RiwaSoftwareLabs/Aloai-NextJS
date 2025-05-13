@@ -19,7 +19,8 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
   try {
     const userMetadata = {
       ...metadata,
-      displayName
+      displayName,
+      emailRedirectTo: "https://www.aloai.ai"
     };
     
     // Step 1: Register the user with Supabase Auth
