@@ -1,18 +1,19 @@
 "use client";
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import ChatContainer from '@/components/chat/ChatContainer';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-const HomePage = () => {
+// Component that uses useSearchParams
+const HomeContent = () => {
   const searchParams = useSearchParams();
   const chatId = searchParams.get('id');
   const { t, isRTL } = useLanguage();
   
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <>
       {chatId ? (
         <ChatContainer chatId={chatId} userId="user" />
       ) : (
@@ -26,6 +27,17 @@ const HomePage = () => {
           </div>
         </div>
       )}
+    </>
+  );
+};
+
+// Main page component with Suspense boundary
+const HomePage = () => {
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center">Loading...</div>}>
+        <HomeContent />
+      </Suspense>
     </div>
   );
 };
