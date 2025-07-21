@@ -87,6 +87,32 @@ export const getAIBrainByUserId = async (userId: string) => {
 };
 
 /**
+ * Get all AI brains by user ID
+ */
+export const getAIBrainsByUserId = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('ai_brains')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      data,
+      error: null
+    };
+  } catch (error) {
+    return {
+      success: false,
+      data: null,
+      error
+    };
+  }
+};
+
+/**
  * Get the Super AI Brain (mentor) ID
  * This should be a fixed value for the super AI brain
  */
@@ -127,20 +153,10 @@ export const createUserAIBrain = async (userId: string, userName: string) => {
     }
 
     const mentorId = superBrainResult.data;
-    console.log('mentorId ======>', mentorId);
     const brainName = `${userName}'s AI Brain`;
     
     // Create a personalized system prompt
     const systemPrompt = `You are ${userName}'s personal AI Brain. You are here to help ${userName} with their tasks, answer questions, and provide assistance. You should be helpful, friendly, and knowledgeable. Always address ${userName} by their name when appropriate.`;
-
-    console.log('createUserAIBrain ======>', {
-        userId,
-        mentorId,
-        name: brainName,
-        role: 'AI Brain',
-        systemPrompt,
-        type: 'user'
-      });
 
     const result = await createAIBrain({
       userId,

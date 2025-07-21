@@ -27,6 +27,7 @@ import {
   FriendRequest,
   Friend
 } from '@/lib/supabase/friendship';
+import { getAIBrainsByUserId, AIBrain } from '@/lib/supabase/ai_brain';
 
 interface ChatSidebarProps {
   onCloseMobile: () => void;
@@ -36,14 +37,14 @@ interface ChatSidebarProps {
 const PRIMARY_COLOR = "#9333ea"; // Purple
 
 // Dummy data for chats
-const DUMMY_CHATS = [
-  { id: '1', name: 'Ishan', lastMessage: 'New contact added', time: '03:44 AM', unread: 0, isAI: false },
-  { id: '2', name: 'AI Manager', lastMessage: 'How can I help you today?', time: '03:33 AM', unread: 0, isAI: true },
-  { id: '3', name: 'anas', lastMessage: 'Chat with anas', time: '12:13 AM', unread: 0, isAI: true },
-  { id: '4', name: 'hamad', lastMessage: 'Conversation with hamad', time: '10:11 PM', unread: 0, isAI: true },
-  { id: '5', name: 'hh', lastMessage: 'Chat with hh', time: '12:29 AM', unread: 0, isAI: true },
-  { id: '6', name: 'ishan', lastMessage: 'Chat with ishan', time: '05:11 PM', unread: 0, isAI: true },
-];
+// const DUMMY_CHATS = [
+//   { id: '1', name: 'Ishan', lastMessage: 'New contact added', time: '03:44 AM', unread: 0, isAI: false },
+//   { id: '2', name: 'AI Manager', lastMessage: 'How can I help you today?', time: '03:33 AM', unread: 0, isAI: true },
+//   { id: '3', name: 'anas', lastMessage: 'Chat with anas', time: '12:13 AM', unread: 0, isAI: true },
+//   { id: '4', name: 'hamad', lastMessage: 'Conversation with hamad', time: '10:11 PM', unread: 0, isAI: true },
+//   { id: '5', name: 'hh', lastMessage: 'Chat with hh', time: '12:29 AM', unread: 0, isAI: true },
+//   { id: '6', name: 'ishan', lastMessage: 'Chat with ishan', time: '05:11 PM', unread: 0, isAI: true },
+// ];
 
 const ICON_COLORS = {
   ai: PRIMARY_COLOR,
@@ -103,6 +104,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     email: null,
     initials: 'U',
   });
+  const [aiBrains, setAIBrains] = useState<AIBrain[]>([]);
   
   const pathname = usePathname();
   const router = useRouter();
@@ -165,6 +167,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           // Set user ID and fetch friend data
           setUserId(user.id);
           fetchFriendData(user.id);
+          // Fetch AI brains for this user
+          const aiBrainsResult = await getAIBrainsByUserId(user.id);
+          if (aiBrainsResult.success && Array.isArray(aiBrainsResult.data)) {
+            setAIBrains(aiBrainsResult.data);
+          } else {
+            setAIBrains([]);
+          }
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -212,12 +221,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     }
   };
   
-  const filteredChats = DUMMY_CHATS.filter(chat => 
-    chat.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    (activeTab === 'Chats' || 
-     (activeTab === 'Friends' && !chat.isAI) || 
-     (activeTab === 'AI' && chat.isAI))
-  );
+  // const filteredChats = DUMMY_CHATS.filter(chat => 
+  //   chat.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+  //   (activeTab === 'Chats' || 
+  //    (activeTab === 'Friends' && !chat.isAI) || 
+  //    (activeTab === 'AI' && chat.isAI))
+  // );
 
   const handleLogout = async () => {
     try {
@@ -376,53 +385,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           )}
         </div>
       );
+    } else if (activeTab === 'AI') {
+      // Filter aiBrains by search query
+      const filteredBrains = aiBrains.filter(brain =>
+        brain.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      return (
+        <div className="flex-1 overflow-y-auto">
+          {filteredBrains.length === 0 ? (
+            <div className="text-center p-4 text-gray-500">
+              No AI brains found
+            </div>
+          ) : (
+            filteredBrains.map(brain => (
+              <div key={brain.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
+                <img
+                  src={brain.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                  alt={brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium truncate">{brain.name}</h3>
+                  <p className="text-xs text-gray-500 truncate">{brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      );
     } else {
       // Original content for Chats and AI tabs
       return (
         <div className="flex-1 overflow-y-auto">
-          {filteredChats.length === 0 ? (
-            <div className="text-center p-4 text-gray-500">
-              No chats found
-            </div>
-          ) : (
-            filteredChats.map(chat => (
-              <Link
-                key={chat.id}
-                href={`/?id=${chat.id}`} 
-                className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
-                  pathname === `/?id=${chat.id}` ? 'bg-gray-100' : ''
-                }`}
-                onClick={() => {
-                  if (window.innerWidth < 1024) { // lg breakpoint
-                    onCloseMobile();
-                  }
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative flex-shrink-0">
-                    <div className={`
-                      w-10 h-10 rounded-full flex items-center justify-center 
-                      ${chat.isAI ? 'bg-purple-100 text-purple-600' : 'bg-purple-500 text-white'}
-                    `}>
-                      {chat.name.charAt(0).toUpperCase()}
-                    </div>
-                    {chat.isAI && (
-                      <div className={`absolute -bottom-1 ${isRTL ? '-left-1' : '-right-1'} bg-purple-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs border-2 border-white`}>
-                        AI
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline">
-                      <h3 className="font-medium truncate">{chat.name}</h3>
-                      <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">{chat.time}</span>
-                    </div>
-                    <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
-                  </div>
-                </div>
-              </Link>
-            ))
-          )}
+          <div className="text-center p-4 text-gray-500">
+            No chats found
+          </div>
         </div>
       );
     }
