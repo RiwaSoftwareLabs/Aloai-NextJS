@@ -23,17 +23,12 @@ interface ChatHeaderProps {
     name: string;
     isAI?: boolean;
     status?: string;
+    icon?: string;
+    initials?: string;
   };
 }
 
-const ChatHeader: React.FC<ChatHeaderProps> = ({ 
-  chat = { 
-    id: '1', 
-    name: 'Ishan', 
-    isAI: false,
-    status: 'Online'
-  } 
-}) => {
+const ChatHeader: React.FC<ChatHeaderProps> = ({ chat }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [hoveredIcon, setHoveredIcon] = useState<string | null>(null);
   const { t, isRTL } = useLanguage();
@@ -50,13 +45,37 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   const dropdownPosition = isRTL ? 'left-0' : 'right-0';
 
+  if (!chat) {
+    // Skeleton loader for header
+    return (
+      <div className="h-16 px-4 border-b border-gray-100 flex items-center justify-between bg-white relative animate-pulse">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gray-200" />
+          <div>
+            <div className="h-4 w-24 bg-gray-200 rounded mb-1" />
+            <div className="h-3 w-16 bg-gray-100 rounded" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-gray-100" />
+          <div className="h-8 w-8 rounded-full bg-gray-100" />
+          <div className="h-8 w-8 rounded-full bg-gray-100" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-16 px-4 border-b border-gray-100 flex items-center justify-between bg-white relative">
       <div className="flex items-center gap-3">
         <div className="relative">
-          <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center text-white">
-            {chat.name.charAt(0).toUpperCase()}
-          </div>
+          {chat.icon ? (
+            <img src={chat.icon} alt={chat.name} className="w-10 h-10 rounded-full object-cover" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center text-white">
+              {chat.initials ? chat.initials : chat.name.charAt(0).toUpperCase()}
+            </div>
+          )}
           {chat.status === 'Online' && (
             <div className={`absolute bottom-0 ${isRTL ? 'left-0' : 'right-0'} w-3 h-3 bg-green-500 rounded-full border-2 border-white`}></div>
           )}

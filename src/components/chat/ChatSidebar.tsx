@@ -27,6 +27,7 @@ import {
   FriendRequest,
   Friend
 } from '@/lib/supabase/friendship';
+import { getChatsForUser, Chat } from '@/lib/supabase/aiChat';
 import { getAIBrainsByUserId, AIBrain } from '@/lib/supabase/ai_brain';
 
 interface ChatSidebarProps {
@@ -36,15 +37,6 @@ interface ChatSidebarProps {
 // Primary color
 const PRIMARY_COLOR = "#9333ea"; // Purple
 
-// Dummy data for chats
-// const DUMMY_CHATS = [
-//   { id: '1', name: 'Ishan', lastMessage: 'New contact added', time: '03:44 AM', unread: 0, isAI: false },
-//   { id: '2', name: 'AI Manager', lastMessage: 'How can I help you today?', time: '03:33 AM', unread: 0, isAI: true },
-//   { id: '3', name: 'anas', lastMessage: 'Chat with anas', time: '12:13 AM', unread: 0, isAI: true },
-//   { id: '4', name: 'hamad', lastMessage: 'Conversation with hamad', time: '10:11 PM', unread: 0, isAI: true },
-//   { id: '5', name: 'hh', lastMessage: 'Chat with hh', time: '12:29 AM', unread: 0, isAI: true },
-//   { id: '6', name: 'ishan', lastMessage: 'Chat with ishan', time: '05:11 PM', unread: 0, isAI: true },
-// ];
 
 const ICON_COLORS = {
   ai: PRIMARY_COLOR,
@@ -104,6 +96,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     email: null,
     initials: 'U',
   });
+  const [chats, setChats] = useState<Chat[]>([]);
   const [aiBrains, setAIBrains] = useState<AIBrain[]>([]);
   
   const pathname = usePathname();
@@ -167,12 +160,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           // Set user ID and fetch friend data
           setUserId(user.id);
           fetchFriendData(user.id);
-          // Fetch AI brains for this user
+          // Fetch all chats for this user
+          const userChats = await getChatsForUser(user.id);
+          setChats(userChats);
+          // Fetch all AI brains for this user
           const aiBrainsResult = await getAIBrainsByUserId(user.id);
-          if (aiBrainsResult.success && Array.isArray(aiBrainsResult.data)) {
+          if (aiBrainsResult.success && aiBrainsResult.data) {
             setAIBrains(aiBrainsResult.data);
-          } else {
-            setAIBrains([]);
           }
         }
       } catch (error) {
@@ -187,6 +181,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     const refreshInterval = setInterval(() => {
       if (userId) {
         fetchFriendData(userId);
+        getChatsForUser(userId).then(setChats);
+        getAIBrainsByUserId(userId).then(result => {
+          if (result.success && result.data) setAIBrains(result.data);
+        });
       }
     }, 30000); // 30 seconds
     
@@ -339,9 +337,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
               friends.map(friend => (
                 <Link
                   key={friend.id}
-                  href={`/?id=${friend.userId}`}
+                  href={`/?friend_id=${friend.userId}`}
                   className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
-                    pathname === `/?id=${friend.userId}` ? 'bg-gray-100' : ''
+                    pathname === `/?friend_id=${friend.userId}` ? 'bg-gray-100' : ''
                   }`}
                   onClick={() => {
                     if (window.innerWidth < 1024) { // lg breakpoint
@@ -386,40 +384,87 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         </div>
       );
     } else if (activeTab === 'AI') {
-      // Filter aiBrains by search query
+      // List all AI brains for the user
       const filteredBrains = aiBrains.filter(brain =>
         brain.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       return (
         <div className="flex-1 overflow-y-auto">
           {filteredBrains.length === 0 ? (
-            <div className="text-center p-4 text-gray-500">
-              No AI brains found
-            </div>
+            <div className="text-center p-4 text-gray-500">No AI brains found</div>
           ) : (
             filteredBrains.map(brain => (
-              <div key={brain.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
-                <img
-                  src={brain.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
-                  alt={brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
-                  className="w-10 h-10 rounded-full object-cover"
-                />
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-medium truncate">{brain.name}</h3>
-                  <p className="text-xs text-gray-500 truncate">{brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}</p>
+              <Link
+                key={brain.id}
+                href={`/?ai_brain_id=${brain.id}`}
+                className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
+                onClick={() => {
+                  if (window.innerWidth < 1024) onCloseMobile();
+                  // Optionally: trigger chat creation with this AI brain
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <img
+                    src={brain.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                    alt={brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{brain.name}</h3>
+                    <p className="text-xs text-gray-500 truncate">{brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}</p>
+                  </div>
                 </div>
-              </div>
+              </Link>
+            ))
+          )}
+        </div>
+      );
+    } else if (activeTab === 'Chats') {
+      // List all chats for the user (friend and AI)
+      const filteredChats = chats.filter(chat => {
+        const name = chat.isAI ? chat.ai_brain?.name : chat.title;
+        return name?.toLowerCase().includes(searchQuery.toLowerCase());
+      });
+      return (
+        <div className="flex-1 overflow-y-auto">
+          {filteredChats.length === 0 ? (
+            <div className="text-center p-4 text-gray-500">No chats found</div>
+          ) : (
+            filteredChats.map(chat => (
+              <Link
+                key={chat.id}
+                href={`/?chat_id=${chat.id}`}
+                className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
+                onClick={() => {
+                  if (window.innerWidth < 1024) onCloseMobile();
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  {chat.isAI ? (
+                    <img
+                      src={chat.ai_brain?.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                      alt={chat.ai_brain?.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                      {chat.title?.charAt(0).toUpperCase() || 'C'}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{chat.isAI ? chat.ai_brain?.name : chat.title || 'Chat'}</h3>
+                    <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
+                  </div>
+                </div>
+              </Link>
             ))
           )}
         </div>
       );
     } else {
-      // Original content for Chats and AI tabs
       return (
         <div className="flex-1 overflow-y-auto">
-          <div className="text-center p-4 text-gray-500">
-            No chats found
-          </div>
+          <div className="text-center p-4 text-gray-500">No chats found</div>
         </div>
       );
     }

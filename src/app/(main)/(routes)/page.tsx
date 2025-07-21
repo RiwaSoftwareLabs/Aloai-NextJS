@@ -9,13 +9,15 @@ import { useLanguage } from '@/contexts/LanguageContext';
 // Component that uses useSearchParams
 const HomeContent = () => {
   const searchParams = useSearchParams();
-  const chatId = searchParams.get('id');
+  const chatId = searchParams.get('chat_id');
+  const friendId = searchParams.get('friend_id');
+  const aiBrainId = searchParams.get('ai_brain_id');
   const { t, isRTL } = useLanguage();
   
   return (
     <>
-      {chatId ? (
-        <ChatContainer chatId={chatId} userId="user" />
+      {chatId || friendId || aiBrainId ? (
+        <ChatContainer chatId={chatId || undefined} friendId={friendId || undefined} aiBrainId={aiBrainId || undefined} />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-white p-4">
           <div className="text-center max-w-md mx-auto" dir={isRTL ? 'rtl' : 'ltr'}>
