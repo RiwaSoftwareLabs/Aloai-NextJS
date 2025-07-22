@@ -384,7 +384,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 isOwn={userId ? message.sender.id === userId : false} 
               />
             ))}
-            {loading && (
+            {loading && friendInfo && (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai') && (
               <div className="flex justify-start mb-4">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white mr-2 self-end">
                   AI
