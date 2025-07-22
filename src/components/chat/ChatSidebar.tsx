@@ -533,6 +533,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
 
                   // Find if this friend is an AI or super-ai
                   const aiFriend = aiFriends.find(ai => ai.userId === friendId);
+                  // Find friend in friends list
+                  const friend = friends.find(f => f.userId === friendId);
+                  const displayName = friend?.displayName || chat.title || 'Chat';
                   let avatarContent;
                   if (aiFriend) {
                     avatarContent = (
@@ -545,7 +548,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                   } else {
                     avatarContent = (
                       <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
-                        {chat.title?.charAt(0).toUpperCase() || 'C'}
+                        {displayName.charAt(0).toUpperCase() || 'C'}
                       </div>
                     );
                   }
@@ -569,7 +572,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                         <div className="flex items-center gap-3">
                           {avatarContent}
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
+                            <h3 className="font-medium truncate">{displayName}</h3>
                             <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
                           </div>
                         </div>
