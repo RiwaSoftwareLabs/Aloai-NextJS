@@ -17,7 +17,6 @@ const ForgotPasswordPage = () => {
     
     try {
       // This is just a UI implementation - no actual password reset
-      console.log("Attempting to send password reset email to:", email);
       
       // Simulate a successful password reset request
       setTimeout(() => {

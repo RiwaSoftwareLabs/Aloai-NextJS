@@ -19,10 +19,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// Log supabase client initialization to help with debugging
-console.log('Supabase client initialized with options:', { 
-  url: supabaseUrl ? supabaseUrl.substring(0, 10) + '...' : 'missing',
-  hasKey: !!supabaseAnonKey,
-  persistSession: true,
-  autoRefreshToken: true,
-});
+// Supabase client initialization complete

@@ -27,7 +27,6 @@ const SettingsContainer: React.FC<SettingsContainerProps> = ({
   
   const handleLogoutConfirm = async () => {
     // Actually perform the logout
-    console.log('Logging out...');
     const result = await logoutUser();
     
     if (result.success) {

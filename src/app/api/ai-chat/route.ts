@@ -17,8 +17,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing senderId, receiverId, or content' }, { status: 400 });
     }
 
-    console.log('api key: ', process.env.NEXT_PUBLIC_OPENAI_SECRETE_KEY);
-
     // 1. Store the user message
     // Get or create chat
     let chatId: string;

@@ -32,7 +32,6 @@ const ResetPasswordPage = () => {
     
     try {
       // This is just a UI implementation - no actual password reset
-      console.log("Attempting to reset password");
       
       // Simulate a successful password reset
       setTimeout(() => {

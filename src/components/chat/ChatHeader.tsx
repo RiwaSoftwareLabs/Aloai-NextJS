@@ -36,12 +36,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ chat }) => {
   const { t, isRTL } = useLanguage();
 
   const handleClearMessages = () => {
-    console.log('Clear messages');
     setShowDropdown(false);
   };
 
   const handleDeleteConversation = () => {
-    console.log('Delete conversation');
     setShowDropdown(false);
   };
 

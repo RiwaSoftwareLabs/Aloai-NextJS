@@ -31,7 +31,6 @@ const ProfileSettingsPage = () => {
     setTimeout(() => {
       setIsSaving(false);
       setIsEditing(false);
-      console.log('Profile saved:', profileData);
     }, 1000);
   };
 

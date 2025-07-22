@@ -60,8 +60,6 @@ const LoginContent = () => {
       });
       
       if (result.success) {
-        console.log('Login successful, redirecting to home');
-        
         // Redirect immediately after successful login using router
         router.push('/');
       } else {

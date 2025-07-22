@@ -140,11 +140,8 @@ export async function sendMessage({
   // Use the first chat found (should be unique)
   const chatToUpdate = chats[0];
 
-  console.log('chatToUpdate', chatToUpdate);
-  console.log('message content', message.content);
-
   // Update last_message_text for the correct chat row
-  const { error: chatUpdateError, data: chatUpdateData } = await supabase
+  const { error: chatUpdateError } = await supabase
     .from('chats')
     .update({
       last_message_at: message.created_at,
@@ -155,8 +152,6 @@ export async function sendMessage({
     .select();
   if (chatUpdateError) {
     console.error('Failed to update chat last_message_text:', chatUpdateError);
-  } else {
-    console.log('Updated chat last_message_text:', chatUpdateData);
   }
 
   return message;
@@ -200,7 +195,6 @@ export async function markMessagesAsRead(chatId: string, userId: string) {
     return { error };
   }
   if (!unreadMessages || unreadMessages.length === 0) {
-    console.log('No unread messages to mark as read.');
     return { success: true };
   }
   // Get already read message ids
@@ -216,17 +210,14 @@ export async function markMessagesAsRead(chatId: string, userId: string) {
   const alreadyReadIds = (alreadyRead || []).map((r: { message_id: string }) => r.message_id);
   const toInsert = unreadMessages.filter((m: { id: string }) => !alreadyReadIds.includes(m.id));
   if (toInsert.length === 0) {
-    console.log('All messages already marked as read.');
     return { success: true };
   }
   const inserts: { message_id: string; user_id: string }[] = toInsert.map((msg: { id: string }) => ({ message_id: msg.id, user_id: userId }));
-  console.log('Inserting into message_reads:', inserts);
   const { error: insertError } = await supabase.from('message_reads').upsert(inserts, { onConflict: 'message_id,user_id' });
   if (insertError) {
     console.error('Error inserting into message_reads:', insertError);
     return { error: insertError };
   }
-  console.log('Successfully inserted into message_reads.');
   return { success: true };
 }
 
