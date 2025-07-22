@@ -27,7 +27,7 @@ import {
   FriendRequest,
   Friend
 } from '@/lib/supabase/friendship';
-import { getRecentChatsForUser, Chat } from '@/lib/supabase/aiChat';
+import { getRecentChatsForUser, Chat, getUnreadCountForChat } from '@/lib/supabase/aiChat';
 import { supabase } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { AnimatePresence, Reorder } from 'framer-motion';
@@ -102,6 +102,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   });
   const [chats, setChats] = useState<Chat[]>([]);
   const [aiFriends, setAIFriends] = useState<AIFriend[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   
   const pathname = usePathname();
   const router = useRouter();
@@ -195,6 +196,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           // Fetch all chats for this user
           const userChats = await getRecentChatsForUser(user.id);
           setChats(userChats);
+          // Fetch unread counts for each chat
+          const unreadObj: Record<string, number> = {};
+          await Promise.all(userChats.map(async (chat) => {
+            const count = await getUnreadCountForChat(chat.id, user.id);
+            unreadObj[chat.id] = count;
+          }));
+          setUnreadCounts(unreadObj);
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -208,7 +216,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     const refreshInterval = setInterval(() => {
       if (userId) {
         fetchFriendData(userId);
-        getRecentChatsForUser(userId).then(setChats);
+        getRecentChatsForUser(userId).then(async (userChats) => {
+          setChats(userChats);
+          // Refresh unread counts
+          const unreadObj: Record<string, number> = {};
+          await Promise.all(userChats.map(async (chat) => {
+            const count = await getUnreadCountForChat(chat.id, userId);
+            unreadObj[chat.id] = count;
+          }));
+          setUnreadCounts(unreadObj);
+        });
       }
     }, 30000); // 30 seconds
 
@@ -256,6 +273,22 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         .subscribe();
     }
 
+    // Listen for refresh-unread-counts event
+    const handleRefresh = () => {
+      if (userId) {
+        getRecentChatsForUser(userId).then(async (userChats) => {
+          setChats(userChats);
+          const unreadObj: Record<string, number> = {};
+          await Promise.all(userChats.map(async (chat) => {
+            const count = await getUnreadCountForChat(chat.id, userId);
+            unreadObj[chat.id] = count;
+          }));
+          setUnreadCounts(unreadObj);
+        });
+      }
+    };
+    window.addEventListener('refresh-unread-counts', handleRefresh);
+
     return () => {
       setIsMounted(false);
       clearInterval(refreshInterval);
@@ -263,6 +296,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       if (messageChannel) {
         supabase.removeChannel(messageChannel);
       }
+      window.removeEventListener('refresh-unread-counts', handleRefresh);
     };
   }, [userId]);
   
@@ -564,7 +598,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                     >
                       <Link
                         href={`/?friend_id=${friendId}`}
-                        className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
+                        className={`block px-4 py-3 hover:bg-gray-100 transition-colors relative`}
                         onClick={() => {
                           if (window.innerWidth < 1024) onCloseMobile();
                         }}
@@ -572,7 +606,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                         <div className="flex items-center gap-3">
                           {avatarContent}
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-medium truncate">{displayName}</h3>
+                            <h3 className="font-medium truncate flex items-center">
+                              {displayName}
+                              {unreadCounts[chat.id] > 0 && (
+                                <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                                  {unreadCounts[chat.id]}
+                                </span>
+                              )}
+                            </h3>
                             <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
                           </div>
                         </div>

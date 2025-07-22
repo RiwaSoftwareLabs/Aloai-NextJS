@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers, markMessagesAsRead } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -53,6 +53,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [friendLastSeen, setFriendLastSeen] = useState<string | null>(null);
   const [friendStatus, setFriendStatus] = useState<string>('Offline');
   const lastSeenIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
 
   // Ref for auto-scrolling to bottom
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -141,6 +142,22 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             status: msg.sender_id === userId ? 'sent' : 'delivered',
           }))
         );
+        // Mark messages as read
+        if (userId) await markMessagesAsRead(resolvedChatId, userId);
+        // Trigger unread count refresh in sidebar
+        window.dispatchEvent(new Event('refresh-unread-counts'));
+        // Fetch read message ids
+        if (userId && dbMessages.length > 0) {
+          const messageIds = (dbMessages as DBMessage[]).map((m) => m.id);
+          const { data } = await supabase
+            .from('message_reads')
+            .select('message_id')
+            .eq('user_id', userId)
+            .in('message_id', messageIds);
+          setReadMessageIds(data?.map((r: { message_id: string }) => r.message_id) || []);
+        } else {
+          setReadMessageIds([]);
+        }
       }
     }
     if ((chatId || friendId) && userId) fetchMessages();
@@ -377,13 +394,20 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           </div>
         ) : (
           <div className="w-full space-y-4">
-            {messages.map(message => (
-              <ChatMessage 
-                key={message.id} 
-                message={message} 
-                isOwn={userId ? message.sender.id === userId : false} 
-              />
-            ))}
+            {(() => {
+              const newMessageIndex = messages.findIndex(m => !readMessageIds.includes(m.id) && m.sender.id !== userId);
+              return messages.map((message, idx) => (
+                <React.Fragment key={message.id}>
+                  {idx === newMessageIndex && (
+                    <div className="text-center my-2 text-xs text-blue-500 font-semibold">New Message</div>
+                  )}
+                  <ChatMessage 
+                    message={message} 
+                    isOwn={userId ? message.sender.id === userId : false} 
+                  />
+                </React.Fragment>
+              ));
+            })()}
             {loading && friendInfo && (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai') && (
               <div className="flex justify-start mb-4">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white mr-2 self-end">

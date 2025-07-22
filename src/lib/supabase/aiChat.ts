@@ -183,4 +183,75 @@ export async function getRecentChatsForUser(userId: string): Promise<Chat[]> {
     .order('last_message_at', { ascending: false });
   if (error) throw error;
   return data as Chat[];
+}
+
+// --- UNREAD MESSAGE LOGIC ---
+
+// Mark all messages in a chat as read for a user
+export async function markMessagesAsRead(chatId: string, userId: string) {
+  // Get all unread messages for this user in this chat
+  const { data: unreadMessages, error } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('chat_id', chatId)
+    .not('sender_id', 'eq', userId);
+  if (error) {
+    console.error('Error fetching unread messages:', error);
+    return { error };
+  }
+  if (!unreadMessages || unreadMessages.length === 0) {
+    console.log('No unread messages to mark as read.');
+    return { success: true };
+  }
+  // Get already read message ids
+  const { data: alreadyRead, error: readError } = await supabase
+    .from('message_reads')
+    .select('message_id')
+    .eq('user_id', userId)
+    .in('message_id', unreadMessages.map((m: { id: string }) => m.id));
+  if (readError) {
+    console.error('Error fetching already read messages:', readError);
+    return { error: readError };
+  }
+  const alreadyReadIds = (alreadyRead || []).map((r: { message_id: string }) => r.message_id);
+  const toInsert = unreadMessages.filter((m: { id: string }) => !alreadyReadIds.includes(m.id));
+  if (toInsert.length === 0) {
+    console.log('All messages already marked as read.');
+    return { success: true };
+  }
+  const inserts: { message_id: string; user_id: string }[] = toInsert.map((msg: { id: string }) => ({ message_id: msg.id, user_id: userId }));
+  console.log('Inserting into message_reads:', inserts);
+  const { error: insertError } = await supabase.from('message_reads').upsert(inserts, { onConflict: 'message_id,user_id' });
+  if (insertError) {
+    console.error('Error inserting into message_reads:', insertError);
+    return { error: insertError };
+  }
+  console.log('Successfully inserted into message_reads.');
+  return { success: true };
+}
+
+// Get unread count for a chat for a user
+export async function getUnreadCountForChat(chatId: string, userId: string) {
+  // Count messages in chat not sent by user and not in message_reads for user
+  const { data, error } = await supabase.rpc('count_unread_messages', {
+    chat_id_input: chatId,
+    user_id_input: userId,
+  });
+  if (!error && typeof data === 'number') return data;
+  // Fallback: count in JS if RPC not available
+  const { data: messages, error: msgError } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('chat_id', chatId)
+    .not('sender_id', 'eq', userId);
+  if (msgError) return 0;
+  if (!messages || messages.length === 0) return 0;
+  const { data: reads, error: readsError } = await supabase
+    .from('message_reads')
+    .select('message_id')
+    .eq('user_id', userId)
+    .in('message_id', messages.map((m: { id: string }) => m.id));
+  if (readsError) return 0;
+  const readIds = (reads || []).map((r: { message_id: string }) => r.message_id);
+  return messages.filter((m: { id: string }) => !readIds.includes(m.id)).length;
 } 
