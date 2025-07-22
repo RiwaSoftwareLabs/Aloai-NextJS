@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import { registerUser, checkSession } from '@/lib/supabase/auth';
-import { createUserAIBrain } from '@/lib/supabase/ai_brain';
 
 type ErrorWithMessage = {
   message?: string;
@@ -59,17 +58,6 @@ function RegisterForm() {
         displayName,
       });
       if (result.success) {
-        // Insert record into ai_brains table
-        if (result.data?.user) {
-          const userName = displayName || email.split('@')[0];
-          const aiBrainResult = await createUserAIBrain(result.data.user.id, userName);
-          
-          if (!aiBrainResult.success) {
-            console.error('Failed to create AI brain:', aiBrainResult.error);
-            // Continue with registration even if AI brain creation fails
-          }
-        }
-
         // Redirect after successful registration using router
         router.push('/login?registered=true');
       } else {

@@ -7,10 +7,9 @@ import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser } from '@/lib/supabase/auth';
-import { chatWithAIBrain, getUserAIBrainId, getMessagesForChat, getChatsForUser } from '@/lib/supabase/aiChat';
+import { chatWithAIFriend, getMessagesForChat, getChatsForUser } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
-import type { AIBrain } from '@/lib/supabase/ai_brain';
 
 // Define a more flexible message type
 interface Message {
@@ -39,34 +38,25 @@ interface ChatContainerProps {
   chatId?: string;
   chat?: Chat;
   friendId?: string;
-  aiBrainId?: string;
 }
 
-const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId, aiBrainId }) => {
+const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const { t } = useLanguage();
   const [userId, setUserId] = useState<string | null>(null);
-  const [aiBrainIdState, setAIBrainId] = useState<string | null>(null);
   const [chatInfo, setChatInfo] = useState<Chat | undefined>(chat);
   const [friendInfo, setFriendInfo] = useState<Friend | null>(null);
-  const [aiBrainInfo, setAIBrainInfo] = useState<AIBrain | null>(null);
 
-  // Fetch user and AI Brain IDs on mount
+  // Fetch user on mount
   useEffect(() => {
-    async function fetchUserAndBrain() {
+    async function fetchUser() {
       const { user } = await getCurrentUser();
       if (user && user.id) {
         setUserId(user.id);
-        try {
-          const aiId = await getUserAIBrainId(user.id);
-          setAIBrainId(aiId);
-        } catch {
-          // fallback: do nothing
-        }
       }
     }
-    fetchUserAndBrain();
+    fetchUser();
   }, []);
 
   // Fetch messages for this chat
@@ -127,34 +117,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId, a
     fetchFriend();
   }, [friendId]);
 
-  // Fetch AI brain info if aiBrainId is provided
-  useEffect(() => {
-    async function fetchAIBrain() {
-      if (aiBrainId) {
-        const { getAIBrainsByUserId } = await import('@/lib/supabase/ai_brain');
-        const { session } = await import('@/lib/supabase/auth').then(m => m.checkSession());
-        if (session && session.user) {
-          const userId = session.user.id;
-          const aiBrainsResult = await getAIBrainsByUserId(userId);
-          if (aiBrainsResult.success && aiBrainsResult.data) {
-            const found = aiBrainsResult.data.find((b: AIBrain) => b.id === aiBrainId);
-            setAIBrainInfo(found || null);
-          }
-        }
-      } else {
-        setAIBrainInfo(null);
-      }
-    }
-    fetchAIBrain();
-  }, [aiBrainId]);
-
   const handleSendMessage = async (content: string) => {
-    if (!userId || !aiBrainIdState) return;
+    if (!userId || !friendId) return;
     setLoading(true);
     try {
-      const result = await chatWithAIBrain({
+      const result = await chatWithAIFriend({
         userId,
-        aiBrainId: aiBrainIdState,
+        friendId,
         userMessage: content,
       });
       setMessages(
@@ -191,23 +160,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId, a
               ? friendInfo.displayName.split(' ').map((p: string) => p[0]).join('').substring(0, 2).toUpperCase()
               : 'U',
           };
-        } else if (aiBrainInfo) {
-          // AI header: display name and icon by type
-          return {
-            id: aiBrainInfo.id,
-            name: aiBrainInfo.name,
-            isAI: true,
-            status: 'Online',
-            icon: aiBrainInfo.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png',
-          };
         } else if (chatInfo) {
           // Default chat header (existing logic)
           return {
             id: chatInfo.id,
-            name: chatInfo.ai_brain?.name || chatInfo.title || 'Chat',
-            isAI: !!chatInfo.isAI,
+            name: chatInfo.title || 'Chat',
+            isAI: false,
             status: 'Online',
-            icon: chatInfo.ai_brain?.type === 'super' ? '/icons/super-ai-brain.png' : chatInfo.isAI ? '/icons/ai-brain.png' : undefined,
+            icon: undefined,
           };
         }
         return undefined;

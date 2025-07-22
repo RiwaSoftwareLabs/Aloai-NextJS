@@ -28,7 +28,7 @@ import {
   Friend
 } from '@/lib/supabase/friendship';
 import { getChatsForUser, Chat } from '@/lib/supabase/aiChat';
-import { getAIBrainsByUserId, AIBrain } from '@/lib/supabase/ai_brain';
+import { supabase } from '@/lib/supabase/client';
 
 interface ChatSidebarProps {
   onCloseMobile: () => void;
@@ -97,7 +97,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     initials: 'U',
   });
   const [chats, setChats] = useState<Chat[]>([]);
-  const [aiBrains, setAIBrains] = useState<AIBrain[]>([]);
+  const [aiFriends, setAIFriends] = useState<Friend[]>([]);
   
   const pathname = usePathname();
   const router = useRouter();
@@ -122,6 +122,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       const friendsResult = await getFriends(userId);
       if (friendsResult.success) {
         setFriends(friendsResult.data);
+        // Fetch user_type for each friend
+        const friendIds = friendsResult.data.map(f => f.userId);
+        if (friendIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('user_id, user_type, display_name, email')
+            .in('user_id', friendIds);
+          if (usersData) {
+            setAIFriends(friendsResult.data.filter(f => {
+              const user = (usersData as { user_id: string; user_type: string; display_name: string; email: string }[]).find(u => u.user_id === f.userId);
+              return user && user.user_type === 'ai';
+            }));
+          } else {
+            setAIFriends([]);
+          }
+        } else {
+          setAIFriends([]);
+        }
       }
     } catch (error) {
       console.error('Error fetching friend data:', error);
@@ -163,11 +181,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           // Fetch all chats for this user
           const userChats = await getChatsForUser(user.id);
           setChats(userChats);
-          // Fetch all AI brains for this user
-          const aiBrainsResult = await getAIBrainsByUserId(user.id);
-          if (aiBrainsResult.success && aiBrainsResult.data) {
-            setAIBrains(aiBrainsResult.data);
-          }
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -182,9 +195,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       if (userId) {
         fetchFriendData(userId);
         getChatsForUser(userId).then(setChats);
-        getAIBrainsByUserId(userId).then(result => {
-          if (result.success && result.data) setAIBrains(result.data);
-        });
       }
     }, 30000); // 30 seconds
     
@@ -252,6 +262,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   // What to display in the main chat list area based on the active tab
   const renderTabContent = () => {
     if (activeTab === 'Friends') {
+      // Only show friends whose user_type is not 'ai'
+      const filteredFriends = friends.filter(friend => {
+        // We need to check user_type for each friend
+        // Use the same usersData as in fetchFriendData
+        // For safety, fetch user_type for each friend here
+        // (Assume we have usersData from fetchFriendData, or re-query if needed)
+        // For now, filter out any friend that is also in aiFriends
+        return !aiFriends.some(ai => ai.userId === friend.userId);
+      }).filter(friend =>
+        friend.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+      );
       return (
         <div className="flex-1 overflow-y-auto">
           {/* Pending friend requests */}
@@ -327,14 +348,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           {/* Friends list */}
           <div>
             <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Friends ({friends.length})
+              Friends ({filteredFriends.length})
             </div>
-            {friends.length === 0 ? (
+            {filteredFriends.length === 0 ? (
               <div className="text-center p-4 text-gray-500">
                 No friends yet
               </div>
             ) : (
-              friends.map(friend => (
+              filteredFriends.map(friend => (
                 <Link
                   key={friend.id}
                   href={`/?friend_id=${friend.userId}`}
@@ -366,7 +387,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           </div>
           
           {/* No friends or requests */}
-          {pendingRequests.length === 0 && sentRequests.length === 0 && friends.length === 0 && (
+          {pendingRequests.length === 0 && sentRequests.length === 0 && filteredFriends.length === 0 && (
             <div className="text-center p-8">
               <div className="mb-4">
                 <UserPlus className="h-12 w-12 mx-auto text-gray-300" />
@@ -384,34 +405,33 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         </div>
       );
     } else if (activeTab === 'AI') {
-      // List all AI brains for the user
-      const filteredBrains = aiBrains.filter(brain =>
-        brain.name.toLowerCase().includes(searchQuery.toLowerCase())
+      // List all AI friends (user_type = 'ai')
+      const filteredAIFriends = aiFriends.filter(friend =>
+        friend.displayName.toLowerCase().includes(searchQuery.toLowerCase())
       );
       return (
         <div className="flex-1 overflow-y-auto">
-          {filteredBrains.length === 0 ? (
-            <div className="text-center p-4 text-gray-500">No AI brains found</div>
+          {filteredAIFriends.length === 0 ? (
+            <div className="text-center p-4 text-gray-500">No AI users found</div>
           ) : (
-            filteredBrains.map(brain => (
+            filteredAIFriends.map(friend => (
               <Link
-                key={brain.id}
-                href={`/?ai_brain_id=${brain.id}`}
+                key={friend.id}
+                href={`/?friend_id=${friend.userId}`}
                 className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
                 onClick={() => {
                   if (window.innerWidth < 1024) onCloseMobile();
-                  // Optionally: trigger chat creation with this AI brain
                 }}
               >
                 <div className="flex items-center gap-3">
                   <img
-                    src={brain.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
-                    alt={brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
+                    src={'/icons/ai-brain.png'}
+                    alt={'AI User'}
                     className="w-10 h-10 rounded-full object-cover"
                   />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{brain.name}</h3>
-                    <p className="text-xs text-gray-500 truncate">{brain.type === 'super' ? 'Super AI Brain' : 'AI Brain'}</p>
+                    <h3 className="font-medium truncate">{friend.displayName}</h3>
+                    <p className="text-xs text-gray-500 truncate">AI User</p>
                   </div>
                 </div>
               </Link>
@@ -422,7 +442,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     } else if (activeTab === 'Chats') {
       // List all chats for the user (friend and AI)
       const filteredChats = chats.filter(chat => {
-        const name = chat.isAI ? chat.ai_brain?.name : chat.title;
+        const name = chat.title;
         return name?.toLowerCase().includes(searchQuery.toLowerCase());
       });
       return (
@@ -440,19 +460,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                 }}
               >
                 <div className="flex items-center gap-3">
-                  {chat.isAI ? (
-                    <img
-                      src={chat.ai_brain?.type === 'super' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
-                      alt={chat.ai_brain?.type === 'super' ? 'Super AI Brain' : 'AI Brain'}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
-                      {chat.title?.charAt(0).toUpperCase() || 'C'}
-                    </div>
-                  )}
+                  <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                    {chat.title?.charAt(0).toUpperCase() || 'C'}
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{chat.isAI ? chat.ai_brain?.name : chat.title || 'Chat'}</h3>
+                    <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
                     <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
                   </div>
                 </div>

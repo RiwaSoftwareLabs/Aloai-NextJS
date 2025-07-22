@@ -1,7 +1,5 @@
 import { supabase } from './client';
-import { getAIBrainByUserId, getSuperAIBrainId } from './ai_brain';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { AIBrain } from './ai_brain';
 
 // Message type for Supabase messages table
 interface DBMessage {
@@ -33,18 +31,17 @@ export interface Chat {
   last_message_at?: string;
   last_message_text?: string;
   reference_id?: string;
-  ai_brain?: AIBrain;
   isAI?: boolean;
 }
 
-// 1. Find or create a chat between user and AI Brain
-export async function getOrCreateChat(userId: string, aiBrainId: string) {
+// 1. Find or create a chat between user and friend (AI or human)
+export async function getOrCreateChat(userId: string, friendId: string) {
   // Try to find existing chat
   const { data: chat } = await supabase
     .from('chats')
     .select('*')
     .eq('created_by', userId)
-    .eq('reference_id', aiBrainId)
+    .eq('reference_id', friendId)
     .single();
 
   if (chat) return chat;
@@ -55,9 +52,9 @@ export async function getOrCreateChat(userId: string, aiBrainId: string) {
     .insert([
       {
         created_by: userId,
-        reference_id: aiBrainId,
+        reference_id: friendId,
         is_group: false,
-        title: "Abdul's AI Brain",
+        title: "Chat",
       },
     ])
     .select()
@@ -98,18 +95,18 @@ export async function getMessagesForChat(chatId: string) {
   return data;
 }
 
-// 4. Main chat function
-export async function chatWithAIBrain({
+// 4. Main chat function (for AI, friendId is the AI user id)
+export async function chatWithAIFriend({
   userId,
-  aiBrainId,
+  friendId,
   userMessage,
 }: {
   userId: string;
-  aiBrainId: string;
+  friendId: string;
   userMessage: string;
 }) {
   // Find or create chat
-  const chat = await getOrCreateChat(userId, aiBrainId);
+  const chat = await getOrCreateChat(userId, friendId);
 
   // Insert user message
   await insertMessage(chat.id, userId, userMessage);
@@ -130,8 +127,8 @@ export async function chatWithAIBrain({
 
   const aiContent = aiResponse.choices?.[0]?.message?.content || '...';
 
-  // Insert AI message
-  const aiMsg = await insertMessage(chat.id, aiBrainId, aiContent);
+  // Insert AI message (from friendId, which is the AI user)
+  const aiMsg = await insertMessage(chat.id, friendId, aiContent);
 
   return {
     chat,
@@ -139,54 +136,14 @@ export async function chatWithAIBrain({
   };
 }
 
-// Helper to get the user's AI Brain id (for reference_id)
-export async function getUserAIBrainId(userId: string) {
-  const { success, data } = await getAIBrainByUserId(userId);
-  if (success && data) return data.id;
-  throw new Error('AI Brain not found for user');
-}
-
-// Helper to get the Super AI Brain id
-export async function getSuperAIBrainIdHelper() {
-  const { success, data } = await getSuperAIBrainId();
-  if (success && data) return data;
-  throw new Error('Super AI Brain not found');
-}
-
-// Fetch all chats for a user, including AI Brain info for AI chats
+// Fetch all chats for a user
 export async function getChatsForUser(userId: string): Promise<Chat[]> {
-  // Fetch all chats where the user is the creator (for AI chats)
+  // Fetch all chats where the user is the creator
   const { data: chats, error } = await supabase
     .from('chats')
     .select('*')
     .eq('created_by', userId)
     .order('last_message_at', { ascending: false });
   if (error) throw error;
-
-  // For each chat, if reference_id is set, fetch AI Brain info
-  const aiBrainIds = (chats as Chat[]).filter((c) => c.reference_id).map((c) => c.reference_id as string);
-  let aiBrainsMap: Record<string, AIBrain> = {};
-  if (aiBrainIds.length > 0) {
-    const { data: aiBrains } = await supabase
-      .from('ai_brains')
-      .select('*')
-      .in('id', aiBrainIds);
-    if (aiBrains) {
-      aiBrainsMap = Object.fromEntries((aiBrains as AIBrain[]).map((b) => [b.id, b]));
-    }
-  }
-
-  // Attach AI Brain info to chats
-  const chatsWithInfo: Chat[] = (chats as Chat[]).map((chat) => {
-    if (chat.reference_id && aiBrainsMap[chat.reference_id]) {
-      return {
-        ...chat,
-        ai_brain: aiBrainsMap[chat.reference_id],
-        isAI: true,
-      };
-    }
-    return { ...chat, isAI: false };
-  });
-
-  return chatsWithInfo;
+  return chats as Chat[];
 } 
