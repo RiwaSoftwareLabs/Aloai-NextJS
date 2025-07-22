@@ -29,6 +29,8 @@ import {
 } from '@/lib/supabase/friendship';
 import { getRecentChatsForUser, Chat } from '@/lib/supabase/aiChat';
 import { supabase } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { AnimatePresence, Reorder } from 'framer-motion';
 
 interface ChatSidebarProps {
   onCloseMobile: () => void;
@@ -209,12 +211,37 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
         getRecentChatsForUser(userId).then(setChats);
       }
     }, 30000); // 30 seconds
-    
+
+    // --- Supabase Realtime subscription for messages ---
+    let messageChannel: RealtimeChannel | null = null;
+    if (userId) {
+      messageChannel = supabase
+        .channel('public:messages')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          async (payload) => {
+            const newMessage = payload.new;
+            // Only update if the user is involved in the chat
+            if (newMessage.sender_id === userId || newMessage.receiver_id === userId) {
+              // Re-fetch chats for this user to get updated last_message_at and last_message_text
+              const updatedChats = await getRecentChatsForUser(userId);
+              setChats(updatedChats);
+            }
+          }
+        )
+        .subscribe();
+    }
+
     return () => {
       setIsMounted(false);
       clearInterval(refreshInterval);
+      // Clean up Supabase Realtime subscription
+      if (messageChannel) {
+        supabase.removeChannel(messageChannel);
+      }
     };
-  }, []);
+  }, [userId]);
   
   const handleAcceptFriendRequest = async (friendshipId: string) => {
     try {
@@ -453,63 +480,82 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
       );
     } else if (activeTab === 'Chats') {
       // List all chats for the user (friend and AI)
-      const filteredChats = chats.filter(chat => {
-        const name = chat.title;
-        return name?.toLowerCase().includes(searchQuery.toLowerCase());
-      });
+      const filteredChats = chats
+        .filter(chat => {
+          const name = chat.title;
+          return name?.toLowerCase().includes(searchQuery.toLowerCase());
+        })
+        .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
       return (
         <div className="flex-1 overflow-y-auto">
           {filteredChats.length === 0 ? (
             <div className="text-center p-4 text-gray-500">No chats found</div>
           ) : (
-            filteredChats.map(chat => {
-              // Determine the friend_id (the other participant)
-              let friendId = chat.user_id;
-              if (userId && chat.user_id === userId) {
-                friendId = chat.receiver_id || '';
-              }
-              if (userId && chat.receiver_id === userId) {
-                friendId = chat.user_id;
-              }
+            <Reorder.Group
+              axis="y"
+              values={filteredChats}
+              onReorder={() => {}}
+              className="space-y-0"
+            >
+              <AnimatePresence initial={false}>
+                {filteredChats.map(chat => {
+                  // Determine the friend_id (the other participant)
+                  let friendId = chat.user_id;
+                  if (userId && chat.user_id === userId) {
+                    friendId = chat.receiver_id || '';
+                  }
+                  if (userId && chat.receiver_id === userId) {
+                    friendId = chat.user_id;
+                  }
 
-              // Find if this friend is an AI or super-ai
-              const aiFriend = aiFriends.find(ai => ai.userId === friendId);
-              let avatarContent;
-              if (aiFriend) {
-                avatarContent = (
-                  <img
-                    src={aiFriend.user_type === 'super-ai' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
-                    alt={aiFriend.user_type === 'super-ai' ? 'Super AI Brain' : 'AI Brain'}
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
-                );
-              } else {
-                avatarContent = (
-                  <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
-                    {chat.title?.charAt(0).toUpperCase() || 'C'}
-                  </div>
-                );
-              }
+                  // Find if this friend is an AI or super-ai
+                  const aiFriend = aiFriends.find(ai => ai.userId === friendId);
+                  let avatarContent;
+                  if (aiFriend) {
+                    avatarContent = (
+                      <img
+                        src={aiFriend.user_type === 'super-ai' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                        alt={aiFriend.user_type === 'super-ai' ? 'Super AI Brain' : 'AI Brain'}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    );
+                  } else {
+                    avatarContent = (
+                      <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                        {chat.title?.charAt(0).toUpperCase() || 'C'}
+                      </div>
+                    );
+                  }
 
-              return (
-                <Link
-                  key={chat.id}
-                  href={`/?friend_id=${friendId}`}
-                  className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
-                  onClick={() => {
-                    if (window.innerWidth < 1024) onCloseMobile();
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    {avatarContent}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
-                      <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })
+                  return (
+                    <Reorder.Item
+                      key={chat.id}
+                      value={chat}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <Link
+                        href={`/?friend_id=${friendId}`}
+                        className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
+                        onClick={() => {
+                          if (window.innerWidth < 1024) onCloseMobile();
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          {avatarContent}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
+                            <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
+                          </div>
+                        </div>
+                      </Link>
+                    </Reorder.Item>
+                  );
+                })}
+              </AnimatePresence>
+            </Reorder.Group>
           )}
         </div>
       );
