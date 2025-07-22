@@ -75,6 +75,8 @@ const TabButton = ({
   </button>
 );
 
+type AIFriend = Friend & { user_type: string };
+
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('Chats');
@@ -97,7 +99,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     initials: 'U',
   });
   const [chats, setChats] = useState<Chat[]>([]);
-  const [aiFriends, setAIFriends] = useState<Friend[]>([]);
+  const [aiFriends, setAIFriends] = useState<AIFriend[]>([]);
   
   const pathname = usePathname();
   const router = useRouter();
@@ -130,10 +132,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
             .select('user_id, user_type, display_name, email')
             .in('user_id', friendIds);
           if (usersData) {
-            setAIFriends(friendsResult.data.filter(f => {
-              const user = (usersData as { user_id: string; user_type: string; display_name: string; email: string }[]).find(u => u.user_id === f.userId);
-              return user && user.user_type === 'ai';
-            }));
+            setAIFriends(
+              friendsResult.data
+                .map(f => {
+                  const user = (usersData as { user_id: string; user_type: string; display_name: string; email: string }[]).find(u => u.user_id === f.userId);
+                  if (user && (user.user_type === 'ai' || user.user_type === 'super-ai')) {
+                    return {
+                      ...f,
+                      user_type: user.user_type,
+                    } as AIFriend;
+                  }
+                  return null;
+                })
+                .filter((f): f is AIFriend => f !== null)
+            );
           } else {
             setAIFriends([]);
           }
@@ -425,13 +437,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
               >
                 <div className="flex items-center gap-3">
                   <img
-                    src={'/icons/ai-brain.png'}
-                    alt={'AI User'}
+                    src={friend.user_type === 'super-ai' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                    alt={friend.user_type === 'super-ai' ? 'Super AI Brain' : 'AI Brain'}
                     className="w-10 h-10 rounded-full object-cover"
                   />
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium truncate">{friend.displayName}</h3>
-                    <p className="text-xs text-gray-500 truncate">AI User</p>
+                    <p className="text-xs text-gray-500 truncate">{friend.user_type === 'super-ai' ? 'Super AI User' : 'AI User'}</p>
                   </div>
                 </div>
               </Link>

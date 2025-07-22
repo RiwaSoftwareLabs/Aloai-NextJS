@@ -40,13 +40,15 @@ interface ChatContainerProps {
   friendId?: string;
 }
 
+type FriendWithType = Friend & { user_type?: string };
+
 const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const { t } = useLanguage();
   const [userId, setUserId] = useState<string | null>(null);
   const [chatInfo, setChatInfo] = useState<Chat | undefined>(chat);
-  const [friendInfo, setFriendInfo] = useState<Friend | null>(null);
+  const [friendInfo, setFriendInfo] = useState<FriendWithType | null>(null);
 
   // Fetch user on mount
   useEffect(() => {
@@ -115,8 +117,20 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           const userId = session.user.id;
           const friendsResult = await getFriends(userId);
           if (friendsResult.success) {
-            const found = friendsResult.data.find((f: Friend) => f.userId === friendId);
-            setFriendInfo(found || null);
+            const found = friendsResult.data.find((f: Friend) => f.userId === friendId) as FriendWithType | undefined;
+            if (found) {
+              // Fetch user_type from users table if not present
+              if (!('user_type' in found)) {
+                const { data: userData } = await import('@/lib/supabase/client').then(({ supabase }) =>
+                  supabase.from('users').select('user_type').eq('user_id', found.userId).single()
+                );
+                setFriendInfo({ ...found, user_type: userData?.user_type });
+              } else {
+                setFriendInfo(found);
+              }
+            } else {
+              setFriendInfo(null);
+            }
           }
         }
       } else {
@@ -192,12 +206,18 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       <ChatHeader chat={(() => {
         if (friendInfo) {
           // Friend header: display_name and initials (first two letters)
+          let icon;
+          if (friendInfo.user_type === 'ai') {
+            icon = '/icons/ai-brain.png';
+          } else if (friendInfo.user_type === 'super-ai') {
+            icon = '/icons/super-ai-brain.png';
+          }
           return {
             id: friendInfo.userId,
             name: friendInfo.displayName,
-            isAI: false,
+            isAI: friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai',
             status: 'Online',
-            icon: undefined,
+            icon,
             initials: friendInfo.displayName
               ? friendInfo.displayName.split(' ').map((p: string) => p[0]).join('').substring(0, 2).toUpperCase()
               : 'U',
