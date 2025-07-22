@@ -282,6 +282,26 @@ export const updateUserProfile = async (userData: { [key: string]: string | numb
 };
 
 /**
+ * Update the current user's last_seen to now
+ */
+export const updateLastSeen = async () => {
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+    if (!user) throw new Error('No authenticated user found');
+    const { error } = await supabase
+      .from('users')
+      .update({ last_seen: new Date().toISOString() })
+      .eq('user_id', user.id);
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error updating last_seen:', error);
+    return { success: false, error };
+  }
+};
+
+/**
  * Fetch a user's last_seen timestamp by user_id
  */
 export const getUserLastSeen = async (userId: string) => {

@@ -6,10 +6,12 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { getCurrentUser, getUserLastSeen, formatLastSeenAgo } from '@/lib/supabase/auth';
+import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
 import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
+import { useRef } from 'react';
+import { supabase } from '@/lib/supabase/client';
 
 // Define a more flexible message type
 interface Message {
@@ -51,6 +53,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [friendInfo, setFriendInfo] = useState<FriendWithType | null>(null);
   const [friendLastSeen, setFriendLastSeen] = useState<string | null>(null);
   const [friendStatus, setFriendStatus] = useState<string>('Offline');
+  const lastSeenIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch user on mount
   useEffect(() => {
@@ -62,6 +65,46 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     }
     fetchUser();
   }, []);
+
+  // Efficiently update last_seen for the logged-in user
+  useEffect(() => {
+    let isActive = true;
+    function startLastSeenInterval() {
+      if (lastSeenIntervalRef.current) clearInterval(lastSeenIntervalRef.current);
+      lastSeenIntervalRef.current = setInterval(() => {
+        if (userId && isActive) updateLastSeen();
+      }, 30000); // 30 seconds
+    }
+    function stopLastSeenInterval() {
+      if (lastSeenIntervalRef.current) {
+        clearInterval(lastSeenIntervalRef.current);
+        lastSeenIntervalRef.current = null;
+      }
+    }
+    // On mount, update immediately and start interval if userId
+    if (userId) {
+      updateLastSeen();
+      startLastSeenInterval();
+    }
+    // Listen for tab focus/blur
+    function onFocus() {
+      if (userId) {
+        updateLastSeen();
+        startLastSeenInterval();
+      }
+    }
+    function onBlur() {
+      stopLastSeenInterval();
+    }
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      isActive = false;
+      stopLastSeenInterval();
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [userId]);
 
   // Fetch messages for this chat
   useEffect(() => {
@@ -130,17 +173,23 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 userType = userData?.user_type;
               }
               setFriendInfo({ ...found, user_type: userType });
-              // Fetch last_seen
-              const { last_seen } = await getUserLastSeen(found.userId);
-              setFriendLastSeen(last_seen);
-              // Determine online status
-              if (last_seen) {
-                const now = new Date();
-                const seen = new Date(last_seen);
-                const diffSec = (now.getTime() - seen.getTime()) / 1000;
-                setFriendStatus(diffSec < 5 ? 'Online' : formatLastSeenAgo(last_seen));
+              // If AI or super-ai, always show online
+              if (userType === 'ai' || userType === 'super-ai') {
+                setFriendStatus('Online');
+                setFriendLastSeen(null);
               } else {
-                setFriendStatus('Offline');
+                // Fetch last_seen
+                const { last_seen } = await getUserLastSeen(found.userId);
+                setFriendLastSeen(last_seen);
+                // Determine online status
+                if (last_seen) {
+                  const now = new Date();
+                  const seen = new Date(last_seen);
+                  const diffSec = (now.getTime() - seen.getTime()) / 1000;
+                  setFriendStatus(diffSec < 5 ? 'Online' : formatLastSeenAgo(last_seen));
+                } else {
+                  setFriendStatus('Offline');
+                }
               }
             } else {
               setFriendInfo(null);
@@ -157,6 +206,42 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     }
     fetchFriend();
   }, [friendId]);
+
+  // Subscribe to real-time messages for the current chat
+  useEffect(() => {
+    if (!chatInfo || !chatInfo.id) return;
+    const channel = supabase.channel(`messages:chat:${chatInfo.id}`);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatInfo.id}`,
+        },
+        (payload) => {
+          const msg = payload.new;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: msg.id,
+              content: msg.content,
+              sender: {
+                id: msg.sender_id,
+                name: msg.sender_id === userId ? 'You' : 'Other',
+              },
+              timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: msg.sender_id === userId ? 'sent' : 'delivered',
+            },
+          ]);
+        }
+      )
+      .subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [chatInfo?.id, userId]);
 
   const handleSendMessage = async (content: string) => {
     if (!userId || !friendId) return;
