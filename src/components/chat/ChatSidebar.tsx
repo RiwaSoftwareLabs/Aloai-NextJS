@@ -471,6 +471,26 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
               if (userId && chat.receiver_id === userId) {
                 friendId = chat.user_id;
               }
+
+              // Find if this friend is an AI or super-ai
+              const aiFriend = aiFriends.find(ai => ai.userId === friendId);
+              let avatarContent;
+              if (aiFriend) {
+                avatarContent = (
+                  <img
+                    src={aiFriend.user_type === 'super-ai' ? '/icons/super-ai-brain.png' : '/icons/ai-brain.png'}
+                    alt={aiFriend.user_type === 'super-ai' ? 'Super AI Brain' : 'AI Brain'}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                );
+              } else {
+                avatarContent = (
+                  <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                    {chat.title?.charAt(0).toUpperCase() || 'C'}
+                  </div>
+                );
+              }
+
               return (
                 <Link
                   key={chat.id}
@@ -481,9 +501,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
-                      {chat.title?.charAt(0).toUpperCase() || 'C'}
-                    </div>
+                    {avatarContent}
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
                       <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
