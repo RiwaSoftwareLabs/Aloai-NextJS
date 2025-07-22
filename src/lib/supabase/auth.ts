@@ -280,3 +280,40 @@ export const updateUserProfile = async (userData: { [key: string]: string | numb
     return { success: false, data: null, error };
   }
 };
+
+/**
+ * Fetch a user's last_seen timestamp by user_id
+ */
+export const getUserLastSeen = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('last_seen')
+      .eq('user_id', userId)
+      .single();
+    if (error) throw error;
+    return { last_seen: data?.last_seen || null, error: null };
+  } catch (error) {
+    console.error('Error fetching user last_seen:', error);
+    return { last_seen: null, error };
+  }
+};
+
+/**
+ * Format a timestamp as 'x ago' (e.g., '5 minutes ago', 'just now')
+ */
+export function formatLastSeenAgo(lastSeen: string | Date | null): string {
+  if (!lastSeen) return '';
+  const now = new Date();
+  const seen = typeof lastSeen === 'string' ? new Date(lastSeen) : lastSeen;
+  const diffMs = now.getTime() - seen.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec} seconds ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}

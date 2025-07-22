@@ -9,6 +9,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatLastSeenAgo } from '@/lib/supabase/auth';
 
 // Define colors to match sidebar
 const COLORS = {
@@ -25,6 +26,7 @@ interface ChatHeaderProps {
     status?: string;
     icon?: string;
     initials?: string;
+    last_seen?: string | null;
   };
 }
 
@@ -76,14 +78,22 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ chat }) => {
               {chat.initials ? chat.initials : chat.name.charAt(0).toUpperCase()}
             </div>
           )}
+          {/* Online dot if online */}
           {chat.status === 'Online' && (
             <div className={`absolute bottom-0 ${isRTL ? 'left-0' : 'right-0'} w-3 h-3 bg-green-500 rounded-full border-2 border-white`}></div>
           )}
         </div>
         <div>
           <h2 className="font-medium">{chat.name}</h2>
+          {/* Status/last seen logic */}
           {chat.status && (
-            <p className="text-xs text-blue-500">{chat.status === 'Online' ? t('chat.online') : t('chat.offline')}</p>
+            <p className="text-xs text-blue-500">
+              {chat.status === 'Online'
+                ? t('chat.online')
+                : chat.last_seen
+                  ? `last seen ${formatLastSeenAgo(chat.last_seen)}`
+                  : t('chat.offline')}
+            </p>
           )}
         </div>
       </div>

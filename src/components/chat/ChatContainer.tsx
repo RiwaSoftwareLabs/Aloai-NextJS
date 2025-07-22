@@ -6,7 +6,7 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { getCurrentUser } from '@/lib/supabase/auth';
+import { getCurrentUser, getUserLastSeen, formatLastSeenAgo } from '@/lib/supabase/auth';
 import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
@@ -49,6 +49,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [userId, setUserId] = useState<string | null>(null);
   const [chatInfo, setChatInfo] = useState<Chat | undefined>(chat);
   const [friendInfo, setFriendInfo] = useState<FriendWithType | null>(null);
+  const [friendLastSeen, setFriendLastSeen] = useState<string | null>(null);
+  const [friendStatus, setFriendStatus] = useState<string>('Offline');
 
   // Fetch user on mount
   useEffect(() => {
@@ -120,21 +122,37 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             const found = friendsResult.data.find((f: Friend) => f.userId === friendId) as FriendWithType | undefined;
             if (found) {
               // Fetch user_type from users table if not present
+              let userType = found.user_type;
               if (!('user_type' in found)) {
                 const { data: userData } = await import('@/lib/supabase/client').then(({ supabase }) =>
                   supabase.from('users').select('user_type').eq('user_id', found.userId).single()
                 );
-                setFriendInfo({ ...found, user_type: userData?.user_type });
+                userType = userData?.user_type;
+              }
+              setFriendInfo({ ...found, user_type: userType });
+              // Fetch last_seen
+              const { last_seen } = await getUserLastSeen(found.userId);
+              setFriendLastSeen(last_seen);
+              // Determine online status
+              if (last_seen) {
+                const now = new Date();
+                const seen = new Date(last_seen);
+                const diffSec = (now.getTime() - seen.getTime()) / 1000;
+                setFriendStatus(diffSec < 5 ? 'Online' : formatLastSeenAgo(last_seen));
               } else {
-                setFriendInfo(found);
+                setFriendStatus('Offline');
               }
             } else {
               setFriendInfo(null);
+              setFriendLastSeen(null);
+              setFriendStatus('Offline');
             }
           }
         }
       } else {
         setFriendInfo(null);
+        setFriendLastSeen(null);
+        setFriendStatus('Offline');
       }
     }
     fetchFriend();
@@ -216,7 +234,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             id: friendInfo.userId,
             name: friendInfo.displayName,
             isAI: friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai',
-            status: 'Online',
+            status: friendStatus,
+            last_seen: friendLastSeen,
             icon,
             initials: friendInfo.displayName
               ? friendInfo.displayName.split(' ').map((p: string) => p[0]).join('').substring(0, 2).toUpperCase()
