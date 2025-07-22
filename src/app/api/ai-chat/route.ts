@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     // 2. Check if receiver is AI
     const { data: receiverUser, error: receiverUserError } = await supabase
       .from('users')
-      .select('user_type, display_name')
+      .select('user_type, display_name, role_message')
       .eq('user_id', receiverId)
       .single();
     if (receiverUserError) throw receiverUserError;
@@ -101,45 +101,87 @@ export async function POST(req: NextRequest) {
 
     let aiMsg = null;
     if (isAI) {
-      // 3. Call OpenAI
-      const systemPrompt = receiverUser.user_type === 'super-ai'
-        ? 'You are a super advanced AI assistant.'
-        : 'You are a helpful AI assistant.';
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content },
-      ];
-      const response = await openai.chat.completions.create({
-        model,
-        messages,
-        ...options,
-      });
-      const aiContent = response.choices[0]?.message?.content || '...';
-      // 4. Store AI reply
-      const { data: aiMsgData, error: aiMsgError } = await supabase
-        .from('messages')
-        .insert([
-          {
-            chat_id: chatId,
-            sender_id: receiverId, // AI is the sender
-            receiver_id: senderId,
-            content: aiContent,
-            message_type: 'text',
-          },
-        ])
-        .select()
-        .single();
-      if (aiMsgError) throw aiMsgError;
-      // Update chat last_message_text
-      await supabase
-        .from('chats')
-        .update({
-          last_message_at: aiMsgData.created_at,
-          last_message_text: aiMsgData.content,
-          updated_at: aiMsgData.created_at,
-        })
-        .eq('id', chatId);
-      aiMsg = aiMsgData;
+      // Check for greeting
+      const greetingKeywords = ['hi', 'hello', 'hey', 'how are you', 'greetings', 'who are you', 'what is your name'];
+      const normalizedContent = content.trim().toLowerCase();
+      const isGreeting = greetingKeywords.some((kw) => normalizedContent === kw || normalizedContent.startsWith(kw + ' '));
+      if (isGreeting && receiverUser.role_message) {
+        // 3. Call OpenAI
+        const systemPrompt = `${receiverUser.role_message}\n\nAlways refer to yourself in the first person when introducing yourself or describing your role.`;
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content },
+        ];
+        const response = await openai.chat.completions.create({
+          model,
+          messages,
+          ...options,
+        });
+        const aiContent = response.choices[0]?.message?.content || '...';
+        // 4. Store AI reply
+        const { data: aiMsgData, error: aiMsgError } = await supabase
+          .from('messages')
+          .insert([
+            {
+              chat_id: chatId,
+              sender_id: receiverId, // AI is the sender
+              receiver_id: senderId,
+              content: aiContent,
+              message_type: 'text',
+            },
+          ])
+          .select()
+          .single();
+        if (aiMsgError) throw aiMsgError;
+        // Update chat last_message_text
+        await supabase
+          .from('chats')
+          .update({
+            last_message_at: aiMsgData.created_at,
+            last_message_text: aiMsgData.content,
+            updated_at: aiMsgData.created_at,
+          })
+          .eq('id', chatId);
+        aiMsg = aiMsgData;
+      } else {
+        // 3. Call OpenAI
+        const systemPrompt = `${receiverUser.role_message}\n\nAlways refer to yourself in the first person (e.g., 'I am ...') when introducing yourself or describing your role.`;
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content },
+        ];
+        const response = await openai.chat.completions.create({
+          model,
+          messages,
+          ...options,
+        });
+        const aiContent = response.choices[0]?.message?.content || '...';
+        // 4. Store AI reply
+        const { data: aiMsgData, error: aiMsgError } = await supabase
+          .from('messages')
+          .insert([
+            {
+              chat_id: chatId,
+              sender_id: receiverId, // AI is the sender
+              receiver_id: senderId,
+              content: aiContent,
+              message_type: 'text',
+            },
+          ])
+          .select()
+          .single();
+        if (aiMsgError) throw aiMsgError;
+        // Update chat last_message_text
+        await supabase
+          .from('chats')
+          .update({
+            last_message_at: aiMsgData.created_at,
+            last_message_text: aiMsgData.content,
+            updated_at: aiMsgData.created_at,
+          })
+          .eq('id', chatId);
+        aiMsg = aiMsgData;
+      }
     }
 
     return NextResponse.json({ userMsg, aiMsg });
