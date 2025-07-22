@@ -527,7 +527,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                   />
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium truncate">{friend.displayName}</h3>
-                    <p className="text-xs text-gray-500 truncate">{friend.user_type === 'super-ai' ? 'Super AI User' : 'AI User'}</p>
+                    <p className="text-xs text-gray-500 truncate">{friend.user_type === 'super-ai' ? 'Super AI Brain' : 'AI Brain'}</p>
                   </div>
                 </div>
               </Link>
