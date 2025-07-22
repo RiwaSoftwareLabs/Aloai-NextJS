@@ -27,7 +27,7 @@ import {
   FriendRequest,
   Friend
 } from '@/lib/supabase/friendship';
-import { getChatsForUser, Chat } from '@/lib/supabase/aiChat';
+import { getRecentChatsForUser, Chat } from '@/lib/supabase/aiChat';
 import { supabase } from '@/lib/supabase/client';
 
 interface ChatSidebarProps {
@@ -179,7 +179,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           setUserId(user.id);
           fetchFriendData(user.id);
           // Fetch all chats for this user
-          const userChats = await getChatsForUser(user.id);
+          const userChats = await getRecentChatsForUser(user.id);
           setChats(userChats);
         }
       } catch (error) {
@@ -194,7 +194,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
     const refreshInterval = setInterval(() => {
       if (userId) {
         fetchFriendData(userId);
-        getChatsForUser(userId).then(setChats);
+        getRecentChatsForUser(userId).then(setChats);
       }
     }, 30000); // 30 seconds
     
@@ -450,26 +450,36 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           {filteredChats.length === 0 ? (
             <div className="text-center p-4 text-gray-500">No chats found</div>
           ) : (
-            filteredChats.map(chat => (
-              <Link
-                key={chat.id}
-                href={`/?chat_id=${chat.id}`}
-                className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
-                onClick={() => {
-                  if (window.innerWidth < 1024) onCloseMobile();
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
-                    {chat.title?.charAt(0).toUpperCase() || 'C'}
+            filteredChats.map(chat => {
+              // Determine the friend_id (the other participant)
+              let friendId = chat.user_id;
+              if (userId && chat.user_id === userId) {
+                friendId = chat.receiver_id || '';
+              }
+              if (userId && chat.receiver_id === userId) {
+                friendId = chat.user_id;
+              }
+              return (
+                <Link
+                  key={chat.id}
+                  href={`/?friend_id=${friendId}`}
+                  className={`block px-4 py-3 hover:bg-gray-100 transition-colors`}
+                  onClick={() => {
+                    if (window.innerWidth < 1024) onCloseMobile();
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                      {chat.title?.charAt(0).toUpperCase() || 'C'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
+                      <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{chat.title || 'Chat'}</h3>
-                    <p className="text-xs text-gray-500 truncate">{chat.last_message_text || ''}</p>
-                  </div>
-                </div>
-              </Link>
-            ))
+                </Link>
+              );
+            })
           )}
         </div>
       );

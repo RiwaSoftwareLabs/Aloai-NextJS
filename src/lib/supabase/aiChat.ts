@@ -1,60 +1,74 @@
 import { supabase } from './client';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
-// Message type for Supabase messages table
-interface DBMessage {
+// Chat and Message types based on the provided schema
+export interface Chat {
+  id: string;
+  user_id: string;
+  receiver_id: string | null;
+  title: string | null;
+  is_group: boolean | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  last_message_text: string | null;
+}
+
+export interface Message {
   id: string;
   chat_id: string;
   sender_id: string;
+  receiver_id: string;
   content: string;
+  message_type: string | null;
   created_at: string;
-  updated_at?: string;
-  is_edited?: boolean;
-  is_deleted?: boolean;
-  reply_to_id?: string | null;
-  message_type?: string;
-  attachment_url?: string | null;
-  attachment_type?: string | null;
-  attachment_name?: string | null;
-  attachment_size?: number | null;
-  read_status?: unknown;
+  updated_at: string;
+  is_edited: boolean | null;
+  is_deleted: boolean | null;
+  reply_to_id: string | null;
+  attachment_url: string | null;
+  attachment_type: string | null;
+  attachment_name: string | null;
+  attachment_size: number | null;
+  read_status: Record<string, unknown> | null;
 }
 
-// Chat type for chats table
-export interface Chat {
-  id: string;
-  created_at: string;
-  updated_at?: string;
-  title?: string;
-  is_group?: boolean;
-  created_by: string;
-  last_message_at?: string;
-  last_message_text?: string;
-  reference_id?: string;
-  isAI?: boolean;
-}
-
-// 1. Find or create a chat between user and friend (AI or human)
-export async function getOrCreateChat(userId: string, friendId: string) {
-  // Try to find existing chat
-  const { data: chat } = await supabase
+// Helper: Get or create a unique chat between two users (not group)
+export async function getOrCreateChatBetweenUsers(userId: string, receiverId: string) {
+  // Ensure uniqueness regardless of order (user_id, receiver_id)
+  const { data: existingChats, error: findError } = await supabase
     .from('chats')
     .select('*')
-    .eq('created_by', userId)
-    .eq('reference_id', friendId)
-    .single();
+    .or(`and(user_id.eq.${userId},receiver_id.eq.${receiverId}),and(user_id.eq.${receiverId},receiver_id.eq.${userId})`)
+    .eq('is_group', false)
+    .limit(1);
 
-  if (chat) return chat;
+  if (findError) throw findError;
+  if (existingChats && existingChats.length > 0) return existingChats[0];
 
-  // Create new chat
+  // Fetch receiver's display_name for chat title
+  let receiverDisplayName = 'Chat';
+  if (receiverId) {
+    const { data: receiver, error: receiverError } = await supabase
+      .from('users')
+      .select('display_name')
+      .eq('user_id', receiverId)
+      .single();
+    if (!receiverError && receiver && receiver.display_name) {
+      receiverDisplayName = receiver.display_name;
+    }
+  }
+
+  // Create new chat with receiver's display_name as title
   const { data: newChat, error: insertError } = await supabase
     .from('chats')
     .insert([
       {
+        user_id: userId,
+        receiver_id: receiverId,
         created_by: userId,
-        reference_id: friendId,
         is_group: false,
-        title: "Chat",
+        title: receiverDisplayName,
       },
     ])
     .select()
@@ -64,86 +78,109 @@ export async function getOrCreateChat(userId: string, friendId: string) {
   return newChat;
 }
 
-// 2. Insert a message
-export async function insertMessage(chatId: string, senderId: string, content: string, replyToId?: string) {
-  const { data, error } = await supabase
+// Send a message in a chat (creates chat if needed)
+export async function sendMessage({
+  senderId,
+  receiverId,
+  content,
+  messageType = 'text',
+  replyToId = null,
+  attachment = null,
+}: {
+  senderId: string;
+  receiverId: string;
+  content: string;
+  messageType?: string;
+  replyToId?: string | null;
+  attachment?: {
+    url: string;
+    type: string;
+    name: string;
+    size: number;
+  } | null;
+}) {
+  // Get or create chat
+  const chat = await getOrCreateChatBetweenUsers(senderId, receiverId);
+
+  // Insert message
+  const { data: message, error: msgError } = await supabase
     .from('messages')
     .insert([
       {
-        chat_id: chatId,
+        chat_id: chat.id,
         sender_id: senderId,
+        receiver_id: receiverId,
         content,
-        reply_to_id: replyToId || null,
+        message_type: messageType,
+        reply_to_id: replyToId,
+        attachment_url: attachment?.url || null,
+        attachment_type: attachment?.type || null,
+        attachment_name: attachment?.name || null,
+        attachment_size: attachment?.size || null,
       },
     ])
     .select()
     .single();
 
-  if (error) throw error;
-  return data;
+  if (msgError) throw msgError;
+
+  // Always re-fetch the chat by user/receiver pair to get the correct chat row
+  const { data: chats, error: chatFetchError } = await supabase
+    .from('chats')
+    .select('*')
+    .or(`and(user_id.eq.${senderId},receiver_id.eq.${receiverId}),and(user_id.eq.${receiverId},receiver_id.eq.${senderId})`)
+    .eq('is_group', false)
+    .order('created_at', { ascending: true });
+
+  if (chatFetchError || !chats || chats.length === 0) {
+    console.error('Could not find chat to update last_message_text', chatFetchError);
+    return message;
+  }
+
+  // Use the first chat found (should be unique)
+  const chatToUpdate = chats[0];
+
+  console.log('chatToUpdate', chatToUpdate);
+  console.log('message content', message.content);
+
+  // Update last_message_text for the correct chat row
+  const { error: chatUpdateError, data: chatUpdateData } = await supabase
+    .from('chats')
+    .update({
+      last_message_at: message.created_at,
+      last_message_text: message.content,
+      updated_at: message.created_at,
+    })
+    .eq('id', chatToUpdate.id)
+    .select();
+  if (chatUpdateError) {
+    console.error('Failed to update chat last_message_text:', chatUpdateError);
+  } else {
+    console.log('Updated chat last_message_text:', chatUpdateData);
+  }
+
+  return message;
 }
 
-// 3. Fetch messages for a chat
-export async function getMessagesForChat(chatId: string) {
+// List messages for a chat (ordered by created_at)
+export async function getMessagesForChat(chatId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
     .select('*')
     .eq('chat_id', chatId)
     .order('created_at', { ascending: true });
-
   if (error) throw error;
-  return data;
+  return data as Message[];
 }
 
-// 4. Main chat function (for AI, friendId is the AI user id)
-export async function chatWithAIFriend({
-  userId,
-  friendId,
-  userMessage,
-}: {
-  userId: string;
-  friendId: string;
-  userMessage: string;
-}) {
-  // Find or create chat
-  const chat = await getOrCreateChat(userId, friendId);
-
-  // Insert user message
-  await insertMessage(chat.id, userId, userMessage);
-
-  // Fetch chat history (last N messages for context)
-  const messages: DBMessage[] = await getMessagesForChat(chat.id);
-  const openaiMessages: ChatCompletionMessageParam[] = messages.map((msg) => ({
-    role: msg.sender_id === userId ? 'user' : 'assistant',
-    content: msg.content,
-  }));
-
-  // Generate AI response via API route
-  const aiResponse = await fetch('/api/ai-chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: openaiMessages }),
-  }).then(res => res.json());
-
-  const aiContent = aiResponse.choices?.[0]?.message?.content || '...';
-
-  // Insert AI message (from friendId, which is the AI user)
-  const aiMsg = await insertMessage(chat.id, friendId, aiContent);
-
-  return {
-    chat,
-    messages: [...messages, aiMsg],
-  };
-}
-
-// Fetch all chats for a user
-export async function getChatsForUser(userId: string): Promise<Chat[]> {
-  // Fetch all chats where the user is the creator
-  const { data: chats, error } = await supabase
+// List recent chats for a user (ordered by last_message_at desc)
+export async function getRecentChatsForUser(userId: string): Promise<Chat[]> {
+  // User is either user_id or receiver_id
+  const { data, error } = await supabase
     .from('chats')
     .select('*')
-    .eq('created_by', userId)
+    .or(`user_id.eq.${userId},receiver_id.eq.${userId}`)
     .order('last_message_at', { ascending: false });
   if (error) throw error;
-  return chats as Chat[];
+  return data as Chat[];
 } 

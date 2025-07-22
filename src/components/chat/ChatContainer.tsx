@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser } from '@/lib/supabase/auth';
-import { chatWithAIFriend, getMessagesForChat, getChatsForUser } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 
@@ -61,16 +61,25 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
 
   // Fetch messages for this chat
   useEffect(() => {
+    // Clear messages when chatId or friendId changes
+    setMessages([]);
     async function fetchMessages() {
-      if (chatId) {
-        const dbMessages = await getMessagesForChat(chatId);
+      let resolvedChatId = chatId;
+      // If only friendId is provided, get or create the chat and use its id
+      if (!resolvedChatId && friendId && userId) {
+        const chat = await getOrCreateChatBetweenUsers(userId, friendId);
+        resolvedChatId = chat.id;
+        setChatInfo(chat);
+      }
+      if (resolvedChatId) {
+        const dbMessages = await getMessagesForChat(resolvedChatId);
         setMessages(
           (dbMessages as DBMessage[]).map((msg) => ({
             id: msg.id,
             content: msg.content,
             sender: {
               id: msg.sender_id,
-              name: msg.sender_id === userId ? 'You' : 'AI',
+              name: msg.sender_id === userId ? 'You' : 'Other',
             },
             timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: msg.sender_id === userId ? 'sent' : 'delivered',
@@ -78,15 +87,15 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         );
       }
     }
-    if (chatId && userId) fetchMessages();
-  }, [chatId, userId]);
+    if ((chatId || friendId) && userId) fetchMessages();
+  }, [chatId, userId, friendId]);
 
   // Fetch chat info if not provided
   useEffect(() => {
     async function fetchChatInfo() {
       if (!chat && chatId && userId) {
-        const chats = await getChatsForUser(userId);
-        const found = chats.find(c => c.id === chatId);
+        const chats = await getRecentChatsForUser(userId);
+        const found = chats.find((c: Chat) => c.id === chatId);
         setChatInfo(found);
       } else if (chat) {
         setChatInfo(chat);
@@ -120,26 +129,59 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const handleSendMessage = async (content: string) => {
     if (!userId || !friendId) return;
     setLoading(true);
+    // Optimistically add the message to the UI
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: optimisticId,
+      content,
+      sender: {
+        id: userId,
+        name: 'You',
+      },
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sent',
+    };
+    console.log('Appending optimistic message:', optimisticMessage);
+    setMessages((prev) => {
+      const updated = [...prev, optimisticMessage];
+      console.log('Messages after optimistic append:', updated);
+      return updated;
+    });
     try {
-      const result = await chatWithAIFriend({
-        userId,
-        friendId,
-        userMessage: content,
+      console.log('Calling sendMessage API...');
+      const sentMsg = await sendMessage({
+        senderId: userId,
+        receiverId: friendId,
+        content,
       });
-      setMessages(
-        (result.messages as DBMessage[]).map((msg) => ({
-          id: msg.id,
-          content: msg.content,
-          sender: {
-            id: msg.sender_id,
-            name: msg.sender_id === userId ? 'You' : 'AI',
-          },
-          timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: msg.sender_id === userId ? 'sent' : 'delivered',
-        }))
-      );
-    } catch {
-      // Optionally show error
+      console.log('sendMessage API result:', sentMsg);
+      // Replace the optimistic message with the real one
+      setMessages((prev) => {
+        const updated = prev.map((msg) =>
+          msg.id === optimisticId
+            ? {
+                id: sentMsg.id,
+                content: sentMsg.content,
+                sender: {
+                  id: sentMsg.sender_id,
+                  name: sentMsg.sender_id === userId ? 'You' : 'Other',
+                },
+                timestamp: new Date(sentMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: (sentMsg.sender_id === userId ? 'sent' : 'delivered') as 'sent' | 'delivered',
+              }
+            : msg
+        );
+        console.log('Messages after replacing optimistic with real:', updated);
+        return updated;
+      });
+    } catch (err) {
+      console.error('sendMessage API error:', err);
+      // Remove the optimistic message if sending fails
+      setMessages((prev) => {
+        const updated = prev.filter((msg) => msg.id !== optimisticId);
+        console.log('Messages after removing failed optimistic:', updated);
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
