@@ -258,23 +258,50 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
     };
-    console.log('Appending optimistic message:', optimisticMessage);
-    setMessages((prev) => {
-      const updated = [...prev, optimisticMessage];
-      console.log('Messages after optimistic append:', updated);
-      return updated;
-    });
+    setMessages((prev) => [...prev, optimisticMessage]);
     try {
-      console.log('Calling sendMessage API...');
-      const sentMsg = await sendMessage({
-        senderId: userId,
-        receiverId: friendId,
-        content,
-      });
-      console.log('sendMessage API result:', sentMsg);
-      // Replace the optimistic message with the real one
-      setMessages((prev) => {
-        const updated = prev.map((msg) =>
+      // If friend is AI, use the new API
+      if (friendInfo && (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai')) {
+        const res = await fetch('/api/ai-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderId: userId, receiverId: friendId, content }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        // Replace optimistic message with real user message
+        setMessages((prev) => prev.map((msg) =>
+          msg.id === optimisticId
+            ? {
+                id: data.userMsg.id,
+                content: data.userMsg.content,
+                sender: { id: data.userMsg.sender_id, name: 'You' },
+                timestamp: new Date(data.userMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'sent',
+              }
+            : msg
+        ));
+        // Append AI reply
+        if (data.aiMsg) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: data.aiMsg.id,
+              content: data.aiMsg.content,
+              sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
+              timestamp: new Date(data.aiMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'delivered',
+            },
+          ]);
+        }
+      } else {
+        // Normal user-to-user message
+        const sentMsg = await sendMessage({
+          senderId: userId,
+          receiverId: friendId,
+          content,
+        });
+        setMessages((prev) => prev.map((msg) =>
           msg.id === optimisticId
             ? {
                 id: sentMsg.id,
@@ -287,18 +314,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 status: (sentMsg.sender_id === userId ? 'sent' : 'delivered') as 'sent' | 'delivered',
               }
             : msg
-        );
-        console.log('Messages after replacing optimistic with real:', updated);
-        return updated;
-      });
+        ));
+      }
     } catch (err) {
-      console.error('sendMessage API error:', err);
-      // Remove the optimistic message if sending fails
-      setMessages((prev) => {
-        const updated = prev.filter((msg) => msg.id !== optimisticId);
-        console.log('Messages after removing failed optimistic:', updated);
-        return updated;
-      });
+      // Log the error for debugging
+      console.error('Error sending message:', err);
+      setMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
     } finally {
       setLoading(false);
     }

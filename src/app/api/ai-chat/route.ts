@@ -1,14 +1,151 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { createClient } from '@supabase/supabase-js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+const openai = new OpenAI({ apiKey: process.env.NEXT_PUBLIC_OPENAI_SECRETE_KEY! });
+
+// Use service role key for server-side DB access
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
-  const { messages, model = 'gpt-4o', ...options } = await req.json();
-  const response = await openai.chat.completions.create({
-    model,
-    messages,
-    ...options,
-  });
-  return NextResponse.json(response);
+  try {
+    const { senderId, receiverId, content, model = 'gpt-4o', ...options } = await req.json();
+    if (!senderId || !receiverId || !content) {
+      return NextResponse.json({ error: 'Missing senderId, receiverId, or content' }, { status: 400 });
+    }
+
+    console.log('api key: ', process.env.NEXT_PUBLIC_OPENAI_SECRETE_KEY);
+
+    // 1. Store the user message
+    // Get or create chat
+    let chatId: string;
+    let chat;
+    {
+      // Ensure uniqueness regardless of order (user_id, receiver_id)
+      const { data: existingChats, error: findError } = await supabase
+        .from('chats')
+        .select('*')
+        .or(`and(user_id.eq.${senderId},receiver_id.eq.${receiverId}),and(user_id.eq.${receiverId},receiver_id.eq.${senderId})`)
+        .eq('is_group', false)
+        .limit(1);
+      if (findError) throw findError;
+      if (existingChats && existingChats.length > 0) {
+        chat = existingChats[0];
+      } else {
+        // Fetch receiver's display_name for chat title
+        let receiverDisplayName = 'Chat';
+        const { data: receiver } = await supabase
+          .from('users')
+          .select('display_name')
+          .eq('user_id', receiverId)
+          .single();
+        if (receiver && receiver.display_name) {
+          receiverDisplayName = receiver.display_name;
+        }
+        const { data: newChat, error: insertError } = await supabase
+          .from('chats')
+          .insert([
+            {
+              user_id: senderId,
+              receiver_id: receiverId,
+              created_by: senderId,
+              is_group: false,
+              title: receiverDisplayName,
+            },
+          ])
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        chat = newChat;
+      }
+      chatId = chat.id;
+    }
+
+    // Insert user message
+    const { data: userMsg, error: userMsgError } = await supabase
+      .from('messages')
+      .insert([
+        {
+          chat_id: chatId,
+          sender_id: senderId,
+          receiver_id: receiverId,
+          content,
+          message_type: 'text',
+        },
+      ])
+      .select()
+      .single();
+    if (userMsgError) throw userMsgError;
+
+    // Update chat last_message_text
+    await supabase
+      .from('chats')
+      .update({
+        last_message_at: userMsg.created_at,
+        last_message_text: userMsg.content,
+        updated_at: userMsg.created_at,
+      })
+      .eq('id', chatId);
+
+    // 2. Check if receiver is AI
+    const { data: receiverUser, error: receiverUserError } = await supabase
+      .from('users')
+      .select('user_type, display_name')
+      .eq('user_id', receiverId)
+      .single();
+    if (receiverUserError) throw receiverUserError;
+    const isAI = receiverUser && (receiverUser.user_type === 'ai' || receiverUser.user_type === 'super-ai');
+
+    let aiMsg = null;
+    if (isAI) {
+      // 3. Call OpenAI
+      const systemPrompt = receiverUser.user_type === 'super-ai'
+        ? 'You are a super advanced AI assistant.'
+        : 'You are a helpful AI assistant.';
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content },
+      ];
+      const response = await openai.chat.completions.create({
+        model,
+        messages,
+        ...options,
+      });
+      const aiContent = response.choices[0]?.message?.content || '...';
+      // 4. Store AI reply
+      const { data: aiMsgData, error: aiMsgError } = await supabase
+        .from('messages')
+        .insert([
+          {
+            chat_id: chatId,
+            sender_id: receiverId, // AI is the sender
+            receiver_id: senderId,
+            content: aiContent,
+            message_type: 'text',
+          },
+        ])
+        .select()
+        .single();
+      if (aiMsgError) throw aiMsgError;
+      // Update chat last_message_text
+      await supabase
+        .from('chats')
+        .update({
+          last_message_at: aiMsgData.created_at,
+          last_message_text: aiMsgData.content,
+          updated_at: aiMsgData.created_at,
+        })
+        .eq('id', chatId);
+      aiMsg = aiMsgData;
+    }
+
+    return NextResponse.json({ userMsg, aiMsg });
+  } catch (err: unknown) {
+    console.error('AI chat API error:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Internal error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
 } 
