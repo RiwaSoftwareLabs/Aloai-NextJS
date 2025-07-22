@@ -222,11 +222,34 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
           { event: 'INSERT', schema: 'public', table: 'messages' },
           async (payload) => {
             const newMessage = payload.new;
-            // Only update if the user is involved in the chat
             if (newMessage.sender_id === userId || newMessage.receiver_id === userId) {
-              // Re-fetch chats for this user to get updated last_message_at and last_message_text
-              const updatedChats = await getRecentChatsForUser(userId);
-              setChats(updatedChats);
+              setChats((prevChats) => {
+                // Find the chat this message belongs to
+                const chatIndex = prevChats.findIndex(
+                  (chat) => chat.id === newMessage.chat_id
+                );
+                if (chatIndex !== -1) {
+                  // Update the chat's last_message_at and last_message_text
+                  const updatedChat = {
+                    ...prevChats[chatIndex],
+                    last_message_at: newMessage.created_at,
+                    last_message_text: newMessage.content,
+                  };
+                  // Move the updated chat to the top
+                  const newChats = [
+                    updatedChat,
+                    ...prevChats.filter((_, i) => i !== chatIndex),
+                  ];
+                  return newChats;
+                } else {
+                  // Optionally, fetch the new chat if it doesn't exist in the list
+                  // (e.g., a new chat was just created)
+                  getRecentChatsForUser(userId).then((userChats) => {
+                    setChats(userChats);
+                  });
+                  return prevChats;
+                }
+              });
             }
           }
         )

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
@@ -10,7 +10,6 @@ import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } fr
 import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
-import { useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
 
 // Define a more flexible message type
@@ -54,6 +53,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [friendLastSeen, setFriendLastSeen] = useState<string | null>(null);
   const [friendStatus, setFriendStatus] = useState<string>('Offline');
   const lastSeenIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Ref for auto-scrolling to bottom
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll to bottom when messages or loading changes
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, loading]);
 
   // Fetch user on mount
   useEffect(() => {
@@ -376,8 +385,18 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               />
             ))}
             {loading && (
-              <div className="text-center text-gray-400 italic">AI is typing...</div>
+              <div className="flex justify-start mb-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white mr-2 self-end">
+                  AI
+                </div>
+                <div className="max-w-[80%]">
+                  <div className="rounded-2xl px-4 py-2 bg-gray-100 text-black rounded-bl-none border border-gray-400">
+                    <span className="italic text-gray-500">AI is typing...</span>
+                  </div>
+                </div>
+              </div>
             )}
+            <div ref={bottomRef} />
           </div>
         )}
       </div>
