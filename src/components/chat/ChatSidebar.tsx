@@ -637,6 +637,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
   
   return (
     <div className="h-full flex flex-col bg-white">
+      {/* Mobile close button */}
+      <div className="lg:hidden p-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{t('appName')}</h2>
+        <button
+          onClick={onCloseMobile}
+          className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      
       {/* Header with icons */}
       <div className="p-4 flex items-center justify-center space-x-3">
         <div className="relative">

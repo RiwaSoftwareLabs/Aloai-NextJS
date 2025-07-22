@@ -44,8 +44,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   };
 
   return (
-    <div className="p-3 border-t border-gray-100 bg-white w-full">
-      <div className="flex items-end gap-2 w-full">
+    <div className="px-3 py-3 border-t border-gray-100 bg-white w-full">
+      <div className="flex items-end gap-2 w-full max-w-full">
         <button 
           type="button"
           className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500 flex-shrink-0"
@@ -53,13 +53,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
           <Paperclip className="h-5 w-5" />
         </button>
         
-        <div className="flex-1 rounded-full border border-gray-200 bg-white overflow-hidden flex items-center w-full relative">
+        <div className="flex-1 rounded-full border border-gray-200 bg-white overflow-hidden flex items-center min-w-0">
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('chat.typeMessage')}
-            className="w-full px-4 py-3 resize-none focus:outline-none max-h-32 text-gray-800"
+            className="w-full px-4 py-3 resize-none focus:outline-none max-h-32 text-gray-800 min-w-0"
             rows={1}
             style={{ 
               minHeight: '45px',
