@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { AuthSession } from '@supabase/supabase-js';
+import { supabaseCache, cacheInvalidators } from './cache';
 
 export type RegisterUserParams = {
   email: string;
@@ -194,17 +195,27 @@ export const getCurrentUser = async () => {
       return { user: null, error: null };
     }
     
-    // Fetch the user details from the users table
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
+    // Check cache for user profile data
+    const cacheKey = supabaseCache.getUserProfileKey(user.id);
+    let userData = supabaseCache.get(cacheKey);
     
-    if (userError) {
-      console.error('Error fetching user from users table:', userError);
-      // Return auth user data if users table fetch fails
-      return { user, error: null };
+    if (!userData) {
+      // Fetch the user details from the users table
+      const { data, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (userError) {
+        console.error('Error fetching user from users table:', userError);
+        // Return auth user data if users table fetch fails
+        return { user, error: null };
+      }
+      
+      userData = data;
+      // Cache the user data for 5 minutes
+      supabaseCache.set(cacheKey, userData, supabaseCache.getDefaultTTL());
     }
     
     // Combine auth user with users table data
@@ -274,6 +285,9 @@ export const updateUserProfile = async (userData: { [key: string]: string | numb
       }
     }
     
+    // Invalidate user profile cache
+    cacheInvalidators.userProfile(user.id);
+    
     return { success: true, data, error: null };
   } catch (error) {
     console.error('Error updating user profile:', error);
@@ -294,6 +308,10 @@ export const updateLastSeen = async () => {
       .update({ last_seen: new Date().toISOString() })
       .eq('user_id', user.id);
     if (error) throw error;
+    
+    // Invalidate last seen cache
+    cacheInvalidators.userLastSeen(user.id);
+    
     return { success: true, error: null };
   } catch (error) {
     console.error('Error updating last_seen:', error);
@@ -306,13 +324,27 @@ export const updateLastSeen = async () => {
  */
 export const getUserLastSeen = async (userId: string) => {
   try {
+    // Check cache first
+    const cacheKey = supabaseCache.getUserLastSeenKey(userId);
+    const cached = supabaseCache.get<{ last_seen: string | null }>(cacheKey);
+    
+    if (cached) {
+      return { last_seen: cached.last_seen, error: null };
+    }
+    
     const { data, error } = await supabase
       .from('users')
       .select('last_seen')
       .eq('user_id', userId)
       .single();
     if (error) throw error;
-    return { last_seen: data?.last_seen || null, error: null };
+    
+    const result = { last_seen: data?.last_seen || null, error: null };
+    
+    // Cache the result for 30 seconds (short TTL for last seen data)
+    supabaseCache.set(cacheKey, result, supabaseCache.getShortTTL());
+    
+    return result;
   } catch (error) {
     console.error('Error fetching user last_seen:', error);
     return { last_seen: null, error };

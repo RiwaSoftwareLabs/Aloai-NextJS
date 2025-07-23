@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import { supabaseCache, cacheInvalidators } from './cache';
 
 /**
  * Types for friendship operations
@@ -54,20 +55,30 @@ export const FRIENDSHIP_STATUS: FriendshipStatus = {
  */
 export const sendFriendRequest = async ({ requesterId, email }: FriendRequestParams): Promise<FriendRequestResponse> => {
   try {
-    // First check if the user exists in the users table
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('user_id, email')
-      .eq('email', email)
-      .single();
+    // Check cache for user by email first
+    const userCacheKey = supabaseCache.getUserByEmailKey(email);
+    let userData = supabaseCache.get<{ user_id: string; email: string }>(userCacheKey);
+    
+    if (!userData) {
+      // First check if the user exists in the users table
+      const { data, error: userError } = await supabase
+        .from('users')
+        .select('user_id, email')
+        .eq('email', email)
+        .single();
 
-    if (userError || !userData) {
-      // User doesn't exist, consider sending an invitation email
-      return {
-        success: false,
-        message: 'User not found. An invitation email will be sent.',
-        error: userError
-      };
+      if (userError || !data) {
+        // User doesn't exist, consider sending an invitation email
+        return {
+          success: false,
+          message: 'User not found. An invitation email will be sent.',
+          error: userError
+        };
+      }
+      
+      userData = data;
+      // Cache user data for 5 minutes
+      supabaseCache.set(userCacheKey, userData, supabaseCache.getDefaultTTL());
     }
 
     // Make sure requester isn't trying to add themselves
@@ -111,6 +122,10 @@ export const sendFriendRequest = async ({ requesterId, email }: FriendRequestPar
       .single();
 
     if (error) throw error;
+
+    // Invalidate friendship-related caches for both users
+    cacheInvalidators.allFriendshipData(requesterId);
+    cacheInvalidators.allFriendshipData(userData.user_id);
 
     return {
       success: true,
@@ -162,6 +177,15 @@ export const sendInvitationEmail = async (email: string, inviterId: string): Pro
  */
 export const acceptFriendRequest = async (friendshipId: string): Promise<FriendRequestResponse> => {
   try {
+    // First get the friendship to know which users are involved
+    const { data: friendship, error: fetchError } = await supabase
+      .from('friendships')
+      .select('requester_id, receiver_id')
+      .eq('id', friendshipId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     const { data, error } = await supabase
       .from('friendships')
       .update({ 
@@ -173,6 +197,12 @@ export const acceptFriendRequest = async (friendshipId: string): Promise<FriendR
       .single();
 
     if (error) throw error;
+
+    // Invalidate friendship-related caches for both users
+    if (friendship) {
+      cacheInvalidators.allFriendshipData(friendship.requester_id);
+      cacheInvalidators.allFriendshipData(friendship.receiver_id);
+    }
 
     return {
       success: true,
@@ -196,6 +226,15 @@ export const acceptFriendRequest = async (friendshipId: string): Promise<FriendR
  */
 export const declineFriendRequest = async (friendshipId: string): Promise<FriendRequestResponse> => {
   try {
+    // First get the friendship to know which users are involved
+    const { data: friendship, error: fetchError } = await supabase
+      .from('friendships')
+      .select('requester_id, receiver_id')
+      .eq('id', friendshipId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     // Simply delete the record instead of updating status to DECLINED
     const { error } = await supabase
       .from('friendships')
@@ -203,6 +242,12 @@ export const declineFriendRequest = async (friendshipId: string): Promise<Friend
       .eq('id', friendshipId);
 
     if (error) throw error;
+
+    // Invalidate friendship-related caches for both users
+    if (friendship) {
+      cacheInvalidators.allFriendshipData(friendship.requester_id);
+      cacheInvalidators.allFriendshipData(friendship.receiver_id);
+    }
 
     return {
       success: true,
@@ -225,6 +270,14 @@ export const declineFriendRequest = async (friendshipId: string): Promise<Friend
  */
 export const getPendingFriendRequests = async (userId: string): Promise<{ success: boolean; data: FriendRequest[]; error: unknown | null }> => {
   try {
+    // Check cache first
+    const cacheKey = supabaseCache.getPendingRequestsKey(userId);
+    const cached = supabaseCache.get<{ success: boolean; data: FriendRequest[]; error: unknown | null }>(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+
     // Manual join approach using two separate queries instead of foreign key references
     const { data: friendshipData, error: friendshipError } = await supabase
       .from('friendships')
@@ -235,7 +288,10 @@ export const getPendingFriendRequests = async (userId: string): Promise<{ succes
     if (friendshipError) throw friendshipError;
     
     if (!friendshipData || friendshipData.length === 0) {
-      return { success: true, data: [], error: null };
+      const result = { success: true, data: [], error: null };
+      // Cache empty result for 30 seconds
+      supabaseCache.set(cacheKey, result, supabaseCache.getShortTTL());
+      return result;
     }
 
     // Get all requester users
@@ -264,11 +320,16 @@ export const getPendingFriendRequests = async (userId: string): Promise<{ succes
     
     console.log('Pending friend requests:', formattedData);
 
-    return { 
+    const result = { 
       success: true, 
       data: formattedData,
       error: null
     };
+
+    // Cache the result for 30 seconds (short TTL for pending requests)
+    supabaseCache.set(cacheKey, result, supabaseCache.getShortTTL());
+
+    return result;
   } catch (error) {
     console.error('Error getting pending friend requests:', error);
     return { 
