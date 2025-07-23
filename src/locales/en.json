@@ -62,5 +62,22 @@
   "user": {
     "profile": "Profile",
     "email": "Email"
+  },
+  "share": {
+    "title": "Share Message",
+    "messagePreview": "Message Preview",
+    "friends": "Friends",
+    "ai": "AI",
+    "searchPlaceholder": "Search friends or AI...",
+    "loading": "Loading...",
+    "noFriends": "No friends found",
+    "noAI": "No AI assistants found",
+    "friend": "Friend",
+    "aiAssistant": "AI Assistant",
+    "selected": "selected",
+    "cancel": "Cancel",
+    "share": "Share",
+    "sharing": "Sharing...",
+    "forwarded": "Forwarded"
   }
 } 

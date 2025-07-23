@@ -31,6 +31,7 @@ export interface Message {
   attachment_name: string | null;
   attachment_size: number | null;
   read_status: Record<string, unknown> | null;
+  is_forwarded?: boolean;
 }
 
 // Helper: Get or create a unique chat between two users (not group)
@@ -86,6 +87,7 @@ export async function sendMessage({
   messageType = 'text',
   replyToId = null,
   attachment = null,
+  isForwarded = false,
 }: {
   senderId: string;
   receiverId: string;
@@ -98,6 +100,7 @@ export async function sendMessage({
     name: string;
     size: number;
   } | null;
+  isForwarded?: boolean;
 }) {
   // Get or create chat
   const chat = await getOrCreateChatBetweenUsers(senderId, receiverId);
@@ -117,6 +120,7 @@ export async function sendMessage({
         attachment_type: attachment?.type || null,
         attachment_name: attachment?.name || null,
         attachment_size: attachment?.size || null,
+        is_forwarded: isForwarded,
       },
     ])
     .select()
