@@ -142,7 +142,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               id: msg.sender_id,
               name: msg.sender_id === userId ? 'You' : 'Other',
             },
-            timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: msg.created_at, // Pass the ISO string
             status: getMessageStatus(msg, userId!, readStatus),
           }))
         );
@@ -274,7 +274,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               id: msg.sender_id,
               name: msg.sender_id === userId ? 'You' : 'Other',
             },
-            timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: msg.created_at, // Pass the ISO string
             status: msg.sender_id === userId ? 'sent' : 'delivered',
           };
           
@@ -345,7 +345,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         id: userId,
         name: 'You',
       },
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toISOString(), // Use ISO string
       status: 'sent',
     };
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -366,7 +366,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 id: data.userMsg.id,
                 content: data.userMsg.content,
                 sender: { id: data.userMsg.sender_id, name: 'You' },
-                timestamp: new Date(data.userMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                timestamp: data.userMsg.created_at, // Use ISO string
                 status: 'sent',
               } as Message
             : msg
@@ -379,7 +379,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               id: data.aiMsg.id,
               content: data.aiMsg.content,
               sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
-              timestamp: new Date(data.aiMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              timestamp: data.aiMsg.created_at, // Use ISO string
               status: 'delivered',
             } as Message,
           ]);
@@ -400,7 +400,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                   id: sentMsg.sender_id,
                   name: sentMsg.sender_id === userId ? 'You' : 'Other',
                 },
-                timestamp: new Date(sentMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                timestamp: sentMsg.created_at, // Use ISO string
                 status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
               } as Message
             : msg

@@ -19,6 +19,20 @@ interface ChatMessageProps {
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
+  // Parse the timestamp string to a Date object
+  const messageDate = new Date(message.timestamp);
+  const now = new Date();
+
+  // Check if the message is from today
+  const isToday =
+    messageDate.getFullYear() === now.getFullYear() &&
+    messageDate.getMonth() === now.getMonth() &&
+    messageDate.getDate() === now.getDate();
+
+  const formattedTime = messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formattedDate = messageDate.toLocaleDateString();
+  const formattedDateTime = `${formattedDate} ${formattedTime}`;
+
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-4`}>
       {!isOwn && (
@@ -46,10 +60,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
             <p>{message.content}</p>
           )}
         </div>
-        
+        {/* Timestamp below the message bubble */}
         <div className={`text-xs mt-1 flex items-center ${isOwn ? 'justify-end' : 'justify-start'} text-gray-500`}>
-          <span>{message.timestamp}</span>
-          
+          <span>{isToday ? formattedTime : formattedDateTime}</span>
           {isOwn && (
             <span className="ml-1">
               {message.status === 'read' ? (
@@ -63,7 +76,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
           )}
         </div>
       </div>
-      
       <button className={`
         p-1 rounded-full hover:bg-gray-100 transition-colors opacity-0 hover:opacity-100 focus:opacity-100
         ${isOwn ? 'order-0 mr-1' : 'order-3 ml-1'}
