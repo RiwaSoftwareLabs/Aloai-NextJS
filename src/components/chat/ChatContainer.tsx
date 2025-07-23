@@ -23,6 +23,12 @@ interface Message {
   timestamp: string;
   status: 'sent' | 'delivered' | 'read';
   isImage?: boolean;
+  attachment?: {
+    url: string;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+  };
   reactions?: {
     likes_count: number;
     dislikes_count: number;
@@ -38,6 +44,10 @@ interface DBMessage {
   created_at: string;
   is_deleted?: boolean;
   is_edited?: boolean;
+  attachment_url?: string | null;
+  attachment_type?: string | null;
+  attachment_name?: string | null;
+  attachment_size?: number | null;
 }
 
 interface ChatContainerProps {
@@ -121,6 +131,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               },
               timestamp: msg.created_at,
               status: getMessageStatus(msg, userId!, {}),
+              attachment: msg.attachment_url ? {
+                url: msg.attachment_url,
+                fileName: msg.attachment_name || 'Unknown file',
+                fileType: msg.attachment_type || 'application/octet-stream',
+                fileSize: msg.attachment_size || 0,
+              } : undefined,
               reactions: reactionData,
             };
           });
@@ -267,6 +283,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             },
             timestamp: msg.created_at, // Pass the ISO string
             status: getMessageStatus(msg, userId!, readStatus),
+            attachment: msg.attachment_url ? {
+              url: msg.attachment_url,
+              fileName: msg.attachment_name || 'Unknown file',
+              fileType: msg.attachment_type || 'application/octet-stream',
+              fileSize: msg.attachment_size || 0,
+            } : undefined,
             reactions: reactionData,
           };
         });
@@ -481,7 +503,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     };
   }, [chatInfo?.id, userId, friendInfo]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, attachment?: {
+    url: string;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+  }) => {
     if (!userId || !friendId) return;
     setLoading(true);
     // Optimistically add the message to the UI
@@ -495,6 +522,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       },
       timestamp: new Date().toISOString(), // Use ISO string
       status: 'sent',
+      attachment,
       reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
     };
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -525,6 +553,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                     sender: { id: data.userMsg.sender_id, name: 'You' },
                     timestamp: data.userMsg.created_at, // Use ISO string
                     status: 'sent',
+                    attachment,
                     reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
                   } as Message
               : msg
@@ -567,6 +596,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           senderId: userId,
           receiverId: friendId,
           content,
+          attachment: attachment ? {
+            url: attachment.url,
+            type: attachment.fileType,
+            name: attachment.fileName,
+            size: attachment.fileSize,
+          } : null,
         });
         setMessages((prev) => {
           // Check if the real message already exists
@@ -587,6 +622,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                     },
                     timestamp: sentMsg.created_at, // Use ISO string
                     status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
+                    attachment,
                     reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
                   } as Message
               : msg

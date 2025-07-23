@@ -19,6 +19,16 @@
     "placeholder": {
       "title": "Select a conversation",
       "message": "Choose a conversation from the sidebar or start a new chat to begin messaging"
+    },
+    "fileUpload": {
+      "attachFile": "Attach file",
+      "uploading": "Uploading...",
+      "uploadSuccess": "File uploaded successfully",
+      "uploadError": "Upload failed",
+      "fileTooLarge": "File is too large",
+      "unsupportedType": "File type not supported",
+      "supportedTypes": "Supported: PNG, JPEG, PDF, Excel, Word",
+      "maxSize": "Max size: 10MB for images, 25MB for documents"
     }
   },
   "sidebar": {

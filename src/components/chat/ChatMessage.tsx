@@ -1,8 +1,9 @@
 "use client";
 
 import React from 'react';
-import { Check, CheckCheck, MoreVertical, Image } from 'lucide-react';
+import { Check, CheckCheck, MoreVertical, Image, Download, ExternalLink } from 'lucide-react';
 import MessageActions from './MessageActions';
+import { getFileIcon, formatFileSize } from '@/lib/supabase/fileUpload';
 
 interface ChatMessageProps {
   message: {
@@ -16,6 +17,12 @@ interface ChatMessageProps {
     status?: 'sent' | 'delivered' | 'read';
     isImage?: boolean;
     processingTime?: string; // Add processing time for AI messages
+    attachment?: {
+      url: string;
+      fileName: string;
+      fileType: string;
+      fileSize: number;
+    };
     reactions?: {
       likes_count: number;
       dislikes_count: number;
@@ -63,6 +70,89 @@ const formatMessageContent = (content: string) => {
   });
 };
 
+// Component to display file attachments
+const FileAttachment: React.FC<{ attachment: ChatMessageProps['message']['attachment'] }> = ({ attachment }) => {
+  if (!attachment) return null;
+
+  const isImage = attachment.fileType.startsWith('image/');
+  const fileIcon = getFileIcon(attachment.fileType);
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = attachment.url;
+    link.download = attachment.fileName;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleOpen = () => {
+    window.open(attachment.url, '_blank');
+  };
+
+  return (
+    <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+      {isImage ? (
+        <div className="space-y-2">
+          <img 
+            src={attachment.url} 
+            alt={attachment.fileName}
+            className="max-w-full max-h-64 object-contain rounded"
+            onClick={handleOpen}
+            style={{ cursor: 'pointer' }}
+          />
+          <div className="flex items-center justify-between text-sm text-gray-600">
+            <span className="truncate flex-1">{attachment.fileName}</span>
+            <div className="flex items-center space-x-2">
+              <span>{formatFileSize(attachment.fileSize)}</span>
+              <button
+                onClick={handleDownload}
+                className="p-1 rounded hover:bg-gray-200 transition-colors"
+                title="Download"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center">
+              <span className="text-lg">{fileIcon}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {attachment.fileName}
+              </p>
+              <p className="text-xs text-gray-500">
+                {formatFileSize(attachment.fileSize)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={handleOpen}
+              className="p-1 rounded hover:bg-gray-200 transition-colors"
+              title="Open"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="p-1 rounded hover:bg-gray-200 transition-colors"
+              title="Download"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpdate }) => {
   // Parse the timestamp string to a Date object
   const messageDate = new Date(message.timestamp);
@@ -95,6 +185,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
               <div className="leading-relaxed">
                 {formatMessageContent(message.content)}
               </div>
+            )}
+            {message.attachment && (
+              <FileAttachment attachment={message.attachment} />
             )}
           </div>
           <div className="text-xs mt-2 flex items-center justify-end text-gray-400">
@@ -154,6 +247,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
             <div className="leading-relaxed">
               {formatMessageContent(message.content)}
             </div>
+          )}
+          {message.attachment && (
+            <FileAttachment attachment={message.attachment} />
           )}
         </div>
         
