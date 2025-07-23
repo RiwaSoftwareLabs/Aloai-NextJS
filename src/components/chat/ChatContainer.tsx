@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus, getMessageReactionCounts } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus, getMessageReactionsBatch } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -106,38 +106,24 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         if (oldMessages.length === 0) {
           setHasMoreMessages(false);
         } else {
-          // Convert DB messages to UI messages format with reaction data
-          const uiOldMessages: Message[] = await Promise.all(
-            oldMessages.map(async (msg) => {
-              try {
-                const reactionData = await getMessageReactionCounts(msg.id);
-                return {
-                  id: msg.id,
-                  content: msg.content,
-                  sender: {
-                    id: msg.sender_id,
-                    name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-                  },
-                  timestamp: msg.created_at,
-                  status: getMessageStatus(msg, userId!, {}),
-                  reactions: reactionData,
-                };
-              } catch (error) {
-                console.error('Error fetching reaction data for old message:', error);
-                return {
-                  id: msg.id,
-                  content: msg.content,
-                  sender: {
-                    id: msg.sender_id,
-                    name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-                  },
-                  timestamp: msg.created_at,
-                  status: getMessageStatus(msg, userId!, {}),
-                  reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
-                };
-              }
-            })
-          );
+          // Convert DB messages to UI messages format with reaction data using batch operation
+          const oldMessageIds = oldMessages.map(msg => msg.id);
+          const oldReactionsBatch = await getMessageReactionsBatch(oldMessageIds);
+          
+          const uiOldMessages: Message[] = oldMessages.map((msg) => {
+            const reactionData = oldReactionsBatch[msg.id] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+            return {
+              id: msg.id,
+              content: msg.content,
+              sender: {
+                id: msg.sender_id,
+                name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+              },
+              timestamp: msg.created_at,
+              status: getMessageStatus(msg, userId!, {}),
+              reactions: reactionData,
+            };
+          });
           
           // Filter out duplicates before adding to state
           setMessages(prev => {
@@ -266,38 +252,24 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         // Get read status for all messages
         const readStatus = await getMessageReadStatus(resolvedChatId, userId!);
         
-        // Fetch reaction data for all messages
-        const messagesWithReactions = await Promise.all(
-          (dbMessages as DBMessage[]).map(async (msg) => {
-            try {
-              const reactionData = await getMessageReactionCounts(msg.id);
-              return {
-                id: msg.id,
-                content: msg.content,
-                sender: {
-                  id: msg.sender_id,
-                  name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-                },
-                timestamp: msg.created_at, // Pass the ISO string
-                status: getMessageStatus(msg, userId!, readStatus),
-                reactions: reactionData,
-              };
-            } catch (error) {
-              console.error('Error fetching reaction data:', error);
-              return {
-                id: msg.id,
-                content: msg.content,
-                sender: {
-                  id: msg.sender_id,
-                  name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-                },
-                timestamp: msg.created_at,
-                status: getMessageStatus(msg, userId!, readStatus),
-                reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
-              };
-            }
-          })
-        );
+        // Fetch reaction data for all messages using batch operation
+        const messageIds = (dbMessages as DBMessage[]).map(msg => msg.id);
+        const reactionsBatch = await getMessageReactionsBatch(messageIds);
+        
+        const messagesWithReactions = (dbMessages as DBMessage[]).map((msg) => {
+          const reactionData = reactionsBatch[msg.id] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+          return {
+            id: msg.id,
+            content: msg.content,
+            sender: {
+              id: msg.sender_id,
+              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+            },
+            timestamp: msg.created_at, // Pass the ISO string
+            status: getMessageStatus(msg, userId!, readStatus),
+            reactions: reactionData,
+          };
+        });
         
         setMessages(messagesWithReactions);
         

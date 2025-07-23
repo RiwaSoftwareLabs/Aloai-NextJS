@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { ThumbsUp, ThumbsDown, Copy, Check } from 'lucide-react';
 import { toggleMessageReaction } from '@/lib/supabase/aiChat';
+import { calculateOptimisticReaction } from '@/lib/supabase/reactionCache';
+import { copyCache } from '@/lib/supabase/copyCache';
 
 interface MessageActionsProps {
   messageId: string;
@@ -29,43 +31,18 @@ const MessageActions: React.FC<MessageActionsProps> = ({
   const handleReaction = async (reactionType: 'like' | 'dislike') => {
     if (isLoading) return;
     
+    // Apply optimistic update immediately
+    const optimisticReactions = calculateOptimisticReaction(reactions, reactionType);
+    onReactionUpdate(messageId, optimisticReactions);
+    
     setIsLoading(true);
     try {
-      const result = await toggleMessageReaction(messageId, reactionType);
-      
-      // Update local state based on the result
-      const newReactions = { ...reactions };
-      
-      if (result === null) {
-        // Reaction was removed
-        if (reactions.user_reaction === 'like') {
-          newReactions.likes_count = Math.max(0, reactions.likes_count - 1);
-        } else if (reactions.user_reaction === 'dislike') {
-          newReactions.dislikes_count = Math.max(0, reactions.dislikes_count - 1);
-        }
-        newReactions.user_reaction = null;
-      } else if (result === reactionType) {
-        // New reaction or reaction changed
-        if (reactions.user_reaction === 'like' && reactionType === 'dislike') {
-          newReactions.likes_count = Math.max(0, reactions.likes_count - 1);
-          newReactions.dislikes_count = reactions.dislikes_count + 1;
-        } else if (reactions.user_reaction === 'dislike' && reactionType === 'like') {
-          newReactions.dislikes_count = Math.max(0, reactions.dislikes_count - 1);
-          newReactions.likes_count = reactions.likes_count + 1;
-        } else if (reactions.user_reaction === null) {
-          // New reaction
-          if (reactionType === 'like') {
-            newReactions.likes_count = reactions.likes_count + 1;
-          } else {
-            newReactions.dislikes_count = reactions.dislikes_count + 1;
-          }
-        }
-        newReactions.user_reaction = reactionType;
-      }
-      
-      onReactionUpdate(messageId, newReactions);
+      await toggleMessageReaction(messageId, reactionType);
+      // The cache system will handle updating the UI with the actual result
     } catch (error) {
       console.error('Error toggling reaction:', error);
+      // Revert optimistic update on error
+      onReactionUpdate(messageId, reactions);
     } finally {
       setIsLoading(false);
     }
@@ -73,11 +50,8 @@ const MessageActions: React.FC<MessageActionsProps> = ({
 
   const handleCopy = async () => {
     try {
-      // Get the message content from the DOM
-      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-      if (messageElement) {
-        const messageText = messageElement.textContent || '';
-        await navigator.clipboard.writeText(messageText);
+      const success = await copyCache.copyMessageContent(messageId);
+      if (success) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }

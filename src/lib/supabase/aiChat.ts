@@ -322,23 +322,134 @@ export function getMessageStatus(message: { id: string; sender_id: string }, use
   return 'sent';
 }
 
-// Get reaction counts for a message
-export async function getMessageReactionCounts(messageId: string) {
+import { 
+  getCachedMessageReactions, 
+  cacheMessageReactions, 
+  cacheUserReaction,
+  calculateOptimisticReaction,
+  addOptimisticUpdate,
+  removeOptimisticUpdate,
+  prefetchReactions,
+  type ReactionData
+} from './reactionCache';
+import { getCurrentUser } from './auth';
+
+// Get reaction counts for a message with caching
+export async function getMessageReactionCounts(messageId: string): Promise<ReactionData> {
+  // Try to get from cache first
+  const cached = await getCachedMessageReactions(messageId);
+  if (cached) {
+    return cached;
+  }
+
+  // If not in cache, fetch from database
   const { data, error } = await supabase.rpc('get_message_reaction_counts', {
     message_id_param: messageId
   });
   
   if (error) throw error;
-  return data?.[0] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+  
+  const reactionData = data?.[0] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+  
+  // Cache the result
+  cacheMessageReactions(messageId, reactionData);
+  
+  return reactionData;
 }
 
-// Toggle reaction for a message
+// Toggle reaction for a message with caching and optimistic updates
 export async function toggleMessageReaction(messageId: string, reactionType: 'like' | 'dislike') {
-  const { data, error } = await supabase.rpc('toggle_message_reaction', {
-    message_id_param: messageId,
-    reaction_type_param: reactionType
-  });
+  // Get current user
+  const { user } = await getCurrentUser();
+  if (!user?.id) {
+    throw new Error('User not authenticated');
+  }
+
+  // Get current reaction data
+  const currentReactions = await getMessageReactionCounts(messageId);
+  const previousReaction = currentReactions.user_reaction;
+
+  // Calculate optimistic update
+  const optimisticReactions = calculateOptimisticReaction(currentReactions, reactionType);
   
-  if (error) throw error;
-  return data;
+  // Add optimistic update to cache
+  addOptimisticUpdate(messageId, reactionType, previousReaction);
+  
+  // Cache the optimistic update immediately
+  cacheMessageReactions(messageId, optimisticReactions);
+  cacheUserReaction(messageId, user.id, optimisticReactions.user_reaction);
+
+  try {
+    // Make the actual API call
+    const { data, error } = await supabase.rpc('toggle_message_reaction', {
+      message_id_param: messageId,
+      reaction_type_param: reactionType
+    });
+    
+    if (error) throw error;
+    
+    // Remove optimistic update on success
+    removeOptimisticUpdate(messageId);
+    
+    // Update cache with actual result
+    const actualReactions = await getMessageReactionCounts(messageId);
+    cacheMessageReactions(messageId, actualReactions);
+    cacheUserReaction(messageId, user.id, actualReactions.user_reaction);
+    
+    return data;
+  } catch (error) {
+    // On error, revert optimistic update
+    removeOptimisticUpdate(messageId);
+    cacheMessageReactions(messageId, currentReactions);
+    cacheUserReaction(messageId, user.id, previousReaction);
+    throw error;
+  }
+}
+
+// Batch fetch reactions for multiple messages
+export async function getMessageReactionsBatch(messageIds: string[]): Promise<Record<string, ReactionData>> {
+  const results: Record<string, ReactionData> = {};
+  
+  // Try to get as many as possible from cache
+  const cachedResults = await Promise.all(
+    messageIds.map(async (messageId) => {
+      const cached = await getCachedMessageReactions(messageId);
+      return { messageId, cached };
+    })
+  );
+
+  // Collect message IDs that need to be fetched
+  const uncachedIds = cachedResults
+    .filter(result => !result.cached)
+    .map(result => result.messageId);
+
+  // Add cached results to results object
+  cachedResults.forEach(({ messageId, cached }) => {
+    if (cached) {
+      results[messageId] = cached;
+    }
+  });
+
+  // Fetch uncached reactions in parallel
+  if (uncachedIds.length > 0) {
+    const fetchPromises = uncachedIds.map(async (messageId) => {
+      try {
+        const reactions = await getMessageReactionCounts(messageId);
+        results[messageId] = reactions;
+      } catch (error) {
+        console.error(`Error fetching reactions for message ${messageId}:`, error);
+        // Fallback to default values
+        results[messageId] = { likes_count: 0, dislikes_count: 0, user_reaction: null };
+      }
+    });
+
+    await Promise.all(fetchPromises);
+  }
+
+  return results;
+}
+
+// Prefetch reactions for a list of messages
+export async function prefetchMessageReactions(messageIds: string[]): Promise<void> {
+  await prefetchReactions(messageIds, getMessageReactionCounts);
 } 

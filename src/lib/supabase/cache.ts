@@ -25,6 +25,8 @@ class SupabaseCache {
     FRIENDSHIP_STATUS: 'friendship_status',
     USER_BY_EMAIL: 'user_by_email',
     USER_BY_ID: 'user_by_id',
+    MESSAGE_REACTIONS: 'message_reactions',
+    USER_REACTION: 'user_reaction',
   } as const;
 
   /**
@@ -120,6 +122,21 @@ class SupabaseCache {
     this.clearByPattern(`chats:${userId}`);
   }
 
+  /**
+   * Invalidate message reaction cache
+   */
+  invalidateMessageReactionCache(messageId: string): void {
+    this.clearByPattern(`message_reactions:${messageId}`);
+    this.clearByPattern(`user_reaction:${messageId}`);
+  }
+
+  /**
+   * Invalidate all reaction caches for a user
+   */
+  invalidateUserReactionCache(userId: string): void {
+    this.clearByPattern(`user_reaction:${userId}`);
+  }
+
   // Cache key generators
   getUserProfileKey(userId: string): string {
     return this.generateKey(this.CACHE_KEYS.USER_PROFILE, { userId });
@@ -159,6 +176,14 @@ class SupabaseCache {
 
   getUserByIdKey(userId: string): string {
     return this.generateKey(this.CACHE_KEYS.USER_BY_ID, { userId });
+  }
+
+  getMessageReactionsKey(messageId: string): string {
+    return this.generateKey(this.CACHE_KEYS.MESSAGE_REACTIONS, { messageId });
+  }
+
+  getUserReactionKey(messageId: string, userId: string): string {
+    return this.generateKey(this.CACHE_KEYS.USER_REACTION, { messageId, userId });
   }
 
   // TTL getters
@@ -210,7 +235,11 @@ export const cacheInvalidators = {
     supabaseCache.delete(supabaseCache.getFriendshipStatusKey(userId1, userId2)),
   userByEmail: (email: string) => supabaseCache.delete(supabaseCache.getUserByEmailKey(email)),
   userById: (userId: string) => supabaseCache.delete(supabaseCache.getUserByIdKey(userId)),
+  messageReactions: (messageId: string) => supabaseCache.invalidateMessageReactionCache(messageId),
+  userReaction: (messageId: string, userId: string) => 
+    supabaseCache.delete(supabaseCache.getUserReactionKey(messageId, userId)),
   allUserData: (userId: string) => supabaseCache.invalidateUserCache(userId),
   allFriendshipData: (userId: string) => supabaseCache.invalidateFriendshipCache(userId),
   allChatData: (userId: string) => supabaseCache.invalidateChatCache(userId),
+  allReactionData: (userId: string) => supabaseCache.invalidateUserReactionCache(userId),
 }; 
