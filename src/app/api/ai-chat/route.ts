@@ -99,87 +99,75 @@ export async function POST(req: NextRequest) {
 
     let aiMsg = null;
     if (isAI) {
-      // Check for greeting
-      const greetingKeywords = ['hi', 'hello', 'hey', 'how are you', 'greetings', 'who are you', 'what is your name'];
-      const normalizedContent = content.trim().toLowerCase();
-      const isGreeting = greetingKeywords.some((kw) => normalizedContent === kw || normalizedContent.startsWith(kw + ' '));
-      if (isGreeting && receiverUser.role_message) {
-        // 3. Call OpenAI
-        const systemPrompt = `${receiverUser.role_message}\n\nAlways refer to yourself in the first person when introducing yourself or describing your role.`;
-        const messages = [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content },
-        ];
-        const response = await openai.chat.completions.create({
-          model,
-          messages,
-          ...options,
-        });
-        const aiContent = response.choices[0]?.message?.content || '...';
-        // 4. Store AI reply
-        const { data: aiMsgData, error: aiMsgError } = await supabase
-          .from('messages')
-          .insert([
-            {
-              chat_id: chatId,
-              sender_id: receiverId, // AI is the sender
-              receiver_id: senderId,
-              content: aiContent,
-              message_type: 'text',
-            },
-          ])
-          .select()
-          .single();
-        if (aiMsgError) throw aiMsgError;
-        // Update chat last_message_text
-        await supabase
-          .from('chats')
-          .update({
-            last_message_at: aiMsgData.created_at,
-            last_message_text: aiMsgData.content,
-            updated_at: aiMsgData.created_at,
-          })
-          .eq('id', chatId);
-        aiMsg = aiMsgData;
-      } else {
-        // 3. Call OpenAI
-        const systemPrompt = `${receiverUser.role_message}\n\nAlways refer to yourself in the first person (e.g., 'I am ...') when introducing yourself or describing your role.`;
-        const messages = [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content },
-        ];
-        const response = await openai.chat.completions.create({
-          model,
-          messages,
-          ...options,
-        });
-        const aiContent = response.choices[0]?.message?.content || '...';
-        // 4. Store AI reply
-        const { data: aiMsgData, error: aiMsgError } = await supabase
-          .from('messages')
-          .insert([
-            {
-              chat_id: chatId,
-              sender_id: receiverId, // AI is the sender
-              receiver_id: senderId,
-              content: aiContent,
-              message_type: 'text',
-            },
-          ])
-          .select()
-          .single();
-        if (aiMsgError) throw aiMsgError;
-        // Update chat last_message_text
-        await supabase
-          .from('chats')
-          .update({
-            last_message_at: aiMsgData.created_at,
-            last_message_text: aiMsgData.content,
-            updated_at: aiMsgData.created_at,
-          })
-          .eq('id', chatId);
-        aiMsg = aiMsgData;
+      // 1. Fetch last 20 messages for this chat
+      const { data: history, error: chatHistoryError } = await supabase
+        .from('messages')
+        .select('sender_id, content, created_at')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (chatHistoryError) throw chatHistoryError;
+
+      // Ensure chronological order (oldest to newest)
+      const chronologicalHistory = (history || []).slice().reverse();
+
+      // 2. Prepare system prompt
+      const systemPrompt = receiverUser.role_message
+        ? `${receiverUser.role_message}\n\nAlways refer to yourself in the first person (e.g., 'I am ...') when introducing yourself or describing your role.`
+        : '';
+
+      // 3. Format messages for OpenAI
+      const openaiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...chronologicalHistory.map(msg => ({
+          role: msg.sender_id === senderId ? 'user' : 'assistant',
+          content: msg.content,
+        })),
+      ];
+      // Only append if the last message is NOT the current user message
+      if (
+        !chronologicalHistory.length ||
+        chronologicalHistory[chronologicalHistory.length - 1].content !== content ||
+        chronologicalHistory[chronologicalHistory.length - 1].sender_id !== senderId
+      ) {
+        openaiMessages.push({ role: 'user', content });
       }
+
+      console.log('openaiMessages:', openaiMessages);
+
+      // 4. Call OpenAI
+      const response = await openai.chat.completions.create({
+        model,
+        messages: openaiMessages,
+        ...options,
+      });
+      const aiContent = response.choices[0]?.message?.content || '...';
+
+      // 5. Store AI reply
+      const { data: aiMsgData, error: aiMsgError } = await supabase
+        .from('messages')
+        .insert([
+          {
+            chat_id: chatId,
+            sender_id: receiverId, // AI is the sender
+            receiver_id: senderId,
+            content: aiContent,
+            message_type: 'text',
+          },
+        ])
+        .select()
+        .single();
+      if (aiMsgError) throw aiMsgError;
+      // Update chat last_message_text
+      await supabase
+        .from('chats')
+        .update({
+          last_message_at: aiMsgData.created_at,
+          last_message_text: aiMsgData.content,
+          updated_at: aiMsgData.created_at,
+        })
+        .eq('id', chatId);
+      aiMsg = aiMsgData;
     }
 
     return NextResponse.json({ userMsg, aiMsg });
