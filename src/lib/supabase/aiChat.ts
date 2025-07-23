@@ -245,4 +245,54 @@ export async function getUnreadCountForChat(chatId: string, userId: string) {
   if (readsError) return 0;
   const readIds = (reads || []).map((r: { message_id: string }) => r.message_id);
   return messages.filter((m: { id: string }) => !readIds.includes(m.id)).length;
+}
+
+// Get read status for messages in a chat
+export async function getMessageReadStatus(chatId: string, userId: string) {
+  // Get all messages in the chat
+  const { data: messages, error: msgError } = await supabase
+    .from('messages')
+    .select('id, sender_id')
+    .eq('chat_id', chatId);
+  
+  if (msgError) throw msgError;
+  if (!messages || messages.length === 0) return {};
+
+  // Get read records for these messages
+  const { data: reads, error: readsError } = await supabase
+    .from('message_reads')
+    .select('message_id, user_id')
+    .in('message_id', messages.map(m => m.id));
+
+  if (readsError) throw readsError;
+
+  // Create a map of message_id to read status
+  const readStatus: Record<string, boolean> = {};
+  messages.forEach(message => {
+    // A message is read if it's not sent by the current user and has a read record
+    if (message.sender_id !== userId) {
+      const isRead = (reads || []).some(read => 
+        read.message_id === message.id && read.user_id === userId
+      );
+      readStatus[message.id] = isRead;
+    }
+  });
+
+  return readStatus;
+}
+
+// Get message status (sent, delivered, read) for a specific message
+export function getMessageStatus(message: { id: string; sender_id: string }, userId: string, readStatus: Record<string, boolean>): 'sent' | 'delivered' | 'read' {
+  // If the message is not sent by the current user, it's not our message
+  if (message.sender_id !== userId) {
+    return 'delivered';
+  }
+
+  // If the message is sent by the current user, check if it's been read
+  if (readStatus[message.id]) {
+    return 'read';
+  }
+
+  // Default to sent if not read yet
+  return 'sent';
 } 

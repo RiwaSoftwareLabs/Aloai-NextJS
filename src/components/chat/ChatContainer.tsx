@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers, markMessagesAsRead } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -21,7 +21,7 @@ interface Message {
     name: string;
   };
   timestamp: string;
-  status?: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'read';
   isImage?: boolean;
 }
 
@@ -130,6 +130,10 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       }
       if (resolvedChatId) {
         const dbMessages = await getMessagesForChat(resolvedChatId);
+        
+        // Get read status for all messages
+        const readStatus = await getMessageReadStatus(resolvedChatId, userId!);
+        
         setMessages(
           (dbMessages as DBMessage[]).map((msg) => ({
             id: msg.id,
@@ -139,14 +143,26 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               name: msg.sender_id === userId ? 'You' : 'Other',
             },
             timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: msg.sender_id === userId ? 'sent' : 'delivered',
+            status: getMessageStatus(msg, userId!, readStatus),
           }))
         );
+        
         // Mark messages as read
-        if (userId) await markMessagesAsRead(resolvedChatId, userId);
+        if (userId) {
+          try {
+            await fetch('/api/messages/read', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId: resolvedChatId, userId }),
+            });
+          } catch (error) {
+            console.error('Failed to mark messages as read:', error);
+          }
+        }
         // Trigger unread count refresh in sidebar
         window.dispatchEvent(new Event('refresh-unread-counts'));
-        // Fetch read message ids
+        
+        // Update read message ids for new message indicator
         if (userId && dbMessages.length > 0) {
           const messageIds = (dbMessages as DBMessage[]).map((m) => m.id);
           const { data } = await supabase
@@ -233,10 +249,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     fetchFriend();
   }, [friendId]);
 
-  // Subscribe to real-time messages for the current chat
+  // Subscribe to real-time messages and read receipts for the current chat
   useEffect(() => {
-    if (!chatInfo || !chatInfo.id) return;
-    const channel = supabase.channel(`messages:chat:${chatInfo.id}`);
+    if (!chatInfo || !chatInfo.id || !userId) return;
+    
+    const channel = supabase.channel(`chat:${chatInfo.id}:${userId}`);
+    
+    // Subscribe to new messages
     channel
       .on(
         'postgres_changes',
@@ -246,24 +265,69 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           table: 'messages',
           filter: `chat_id=eq.${chatInfo.id}`,
         },
-        (payload) => {
+        async (payload) => {
           const msg = payload.new;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: msg.id,
-              content: msg.content,
-              sender: {
-                id: msg.sender_id,
-                name: msg.sender_id === userId ? 'You' : 'Other',
-              },
-              timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              status: msg.sender_id === userId ? 'sent' : 'delivered',
+          const newMessage: Message = {
+            id: msg.id,
+            content: msg.content,
+            sender: {
+              id: msg.sender_id,
+              name: msg.sender_id === userId ? 'You' : 'Other',
             },
-          ]);
+            timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: msg.sender_id === userId ? 'sent' : 'delivered',
+          };
+          
+          setMessages((prev) => [...prev, newMessage]);
+          
+          // If this is a message from someone else, mark it as read immediately
+          if (msg.sender_id !== userId) {
+            try {
+              await fetch('/api/messages/read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chatId: chatInfo.id, userId }),
+              });
+              // Update the message status to read
+              setMessages((prev) => 
+                prev.map((m) => 
+                  m.id === msg.id ? { ...m, status: 'read' } : m
+                )
+              );
+            } catch (error) {
+              console.error('Failed to mark message as read:', error);
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'message_reads',
+        },
+        async (payload) => {
+          const readRecord = payload.new;
+          // Check if this read record is for a message in our current chat
+          const { data: message } = await supabase
+            .from('messages')
+            .select('chat_id, sender_id')
+            .eq('id', readRecord.message_id)
+            .single();
+          
+          if (message && message.chat_id === chatInfo.id && message.sender_id === userId) {
+            // This is a read receipt for our message, update the status
+            setMessages((prev) => 
+              prev.map((m) => 
+                m.id === readRecord.message_id ? { ...m, status: 'read' } : m
+              )
+            );
+          }
         }
       )
       .subscribe();
+      
     return () => {
       channel.unsubscribe();
     };
@@ -304,7 +368,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 sender: { id: data.userMsg.sender_id, name: 'You' },
                 timestamp: new Date(data.userMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 status: 'sent',
-              }
+              } as Message
             : msg
         ));
         // Append AI reply
@@ -317,7 +381,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
               timestamp: new Date(data.aiMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               status: 'delivered',
-            },
+            } as Message,
           ]);
         }
       } else {
@@ -337,8 +401,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                   name: sentMsg.sender_id === userId ? 'You' : 'Other',
                 },
                 timestamp: new Date(sentMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: (sentMsg.sender_id === userId ? 'sent' : 'delivered') as 'sent' | 'delivered',
-              }
+                status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
+              } as Message
             : msg
         ));
       }
