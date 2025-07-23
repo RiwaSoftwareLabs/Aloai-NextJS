@@ -140,7 +140,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             content: msg.content,
             sender: {
               id: msg.sender_id,
-              name: msg.sender_id === userId ? 'You' : 'Other',
+              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
             },
             timestamp: msg.created_at, // Pass the ISO string
             status: getMessageStatus(msg, userId!, readStatus),
@@ -177,7 +177,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       }
     }
     if ((chatId || friendId) && userId) fetchMessages();
-  }, [chatId, userId, friendId]);
+  }, [chatId, userId, friendId, friendInfo]);
 
   // Fetch chat info if not provided
   useEffect(() => {
@@ -272,7 +272,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             content: msg.content,
             sender: {
               id: msg.sender_id,
-              name: msg.sender_id === userId ? 'You' : 'Other',
+              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
             },
             timestamp: msg.created_at, // Pass the ISO string
             status: msg.sender_id === userId ? 'sent' : 'delivered',
@@ -331,7 +331,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     return () => {
       channel.unsubscribe();
     };
-  }, [chatInfo?.id, userId]);
+  }, [chatInfo?.id, userId, friendInfo]);
 
   const handleSendMessage = async (content: string) => {
     if (!userId || !friendId) return;
@@ -416,7 +416,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full bg-white">
       <ChatHeader chat={(() => {
         if (friendInfo) {
           // Friend header: display_name and initials (first two letters)
@@ -449,7 +449,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         }
         return undefined;
       })()} />
-      <div className="flex-1 overflow-y-auto px-3 py-6 bg-white w-full">
+      <div className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-500">
             <MessageSquare className="h-16 w-16 mb-4 text-gray-300" />
@@ -457,13 +457,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             <p className="text-sm">{t('chat.startConversation')}</p>
           </div>
         ) : (
-          <div className="w-full space-y-4">
+          <div className="w-full space-y-2">
             {(() => {
               const newMessageIndex = messages.findIndex(m => !readMessageIds.includes(m.id) && m.sender.id !== userId);
               return messages.map((message, idx) => (
                 <React.Fragment key={message.id}>
                   {idx === newMessageIndex && (
-                    <div className="text-center my-2 text-xs text-blue-500 font-semibold">New Message</div>
+                    <div className="text-center my-4 text-xs text-blue-500 font-semibold">New Message</div>
                   )}
                   <ChatMessage 
                     message={message} 
@@ -473,12 +473,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               ));
             })()}
             {loading && friendInfo && (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai') && (
-              <div className="flex justify-start mb-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white mr-2 self-end">
+              <div className="flex justify-start mb-6">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 mr-3 self-start mt-1">
                   AI
                 </div>
-                <div className="max-w-[80%]">
-                  <div className="rounded-2xl px-4 py-2 bg-gray-100 text-black rounded-bl-none border border-gray-400">
+                <div className="max-w-[85%]">
+                  <div className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-900">
                     <span className="italic text-gray-500">AI is typing...</span>
                   </div>
                 </div>
