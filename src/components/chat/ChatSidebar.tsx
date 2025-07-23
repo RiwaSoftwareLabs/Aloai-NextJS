@@ -608,7 +608,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onCloseMobile }) => {
                           <div className="flex-1 min-w-0">
                             <h3 className="font-medium truncate flex items-center">
                               {displayName}
-                              {unreadCounts[chat.id] > 0 && (
+                              {/* Only show badge if user_type is 'user' */}
+                              {unreadCounts[chat.id] > 0 && friend && (!aiFriend) && (
                                 <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
                                   {unreadCounts[chat.id]}
                                 </span>
