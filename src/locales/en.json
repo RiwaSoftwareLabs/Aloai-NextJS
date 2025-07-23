@@ -15,6 +15,7 @@
       "clearMessages": "Clear Messages",
       "deleteConversation": "Delete Conversation"
     },
+    "exchange": "Exchange",
     "placeholder": {
       "title": "Select a conversation",
       "message": "Choose a conversation from the sidebar or start a new chat to begin messaging"

@@ -460,17 +460,38 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           <div className="w-full space-y-2">
             {(() => {
               const newMessageIndex = messages.findIndex(m => !readMessageIds.includes(m.id) && m.sender.id !== userId);
-              return messages.map((message, idx) => (
-                <React.Fragment key={message.id}>
-                  {idx === newMessageIndex && (
-                    <div className="text-center my-4 text-xs text-blue-500 font-semibold">New Message</div>
-                  )}
-                  <ChatMessage 
-                    message={message} 
-                    isOwn={userId ? message.sender.id === userId : false} 
-                  />
-                </React.Fragment>
-              ));
+              return messages.map((message, idx) => {
+                const isOwnMessage = userId ? message.sender.id === userId : false;
+                const nextMessage = messages[idx + 1];
+                const isNextMessageOwn = nextMessage ? (userId ? nextMessage.sender.id === userId : false) : null;
+                
+                // Check if we should show a separator (only for AI conversations)
+                // Separator should appear after receiver (AI) message when next message is from sender (user)
+                const shouldShowSeparator = friendInfo && 
+                  (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai') && 
+                  !isOwnMessage && // Current message is from AI (receiver)
+                  nextMessage && 
+                  isNextMessageOwn; // Next message is from user (sender)
+                
+                return (
+                  <React.Fragment key={message.id}>
+                    {idx === newMessageIndex && (
+                      <div className="text-center my-4 text-xs text-blue-500 font-semibold">New Message</div>
+                    )}
+                    <ChatMessage 
+                      message={message} 
+                      isOwn={isOwnMessage} 
+                    />
+                    {/* Message separator for AI conversations */}
+                    {shouldShowSeparator && (
+                      <div className="flex items-center justify-center my-4">
+                        <div className="flex-1 h-px bg-gray-200"></div>
+                        <div className="flex-1 h-px bg-gray-200"></div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              });
             })()}
             {loading && friendInfo && (friendInfo.user_type === 'ai' || friendInfo.user_type === 'super-ai') && (
               <div className="flex justify-start mb-6">
