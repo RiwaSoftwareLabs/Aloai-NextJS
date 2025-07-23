@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChat, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -46,6 +46,8 @@ type FriendWithType = Friend & { user_type?: string };
 const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingOldMessages, setLoadingOldMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const { t } = useLanguage();
   const [userId, setUserId] = useState<string | null>(null);
   const [chatInfo, setChatInfo] = useState<Chat | undefined>(chat);
@@ -55,15 +57,68 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const lastSeenIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
 
-  // Ref for auto-scrolling to bottom
+  // Refs for scroll handling
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollPositionRef = useRef<number>(0);
 
-  // Scroll to bottom when messages or loading changes
+  // Scroll to bottom when messages or loading changes (but not when loading old messages)
   useEffect(() => {
-    if (bottomRef.current) {
+    if (bottomRef.current && !loadingOldMessages) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, loading]);
+  }, [messages, loading, loadingOldMessages]);
+
+  // Handle scroll to load old messages
+  const handleScroll = async () => {
+    if (!messagesContainerRef.current || loadingOldMessages || !hasMoreMessages) return;
+
+    const { scrollTop } = messagesContainerRef.current;
+    
+    // Load more messages when user scrolls near the top (within 100px)
+    if (scrollTop < 100 && messages.length > 0) {
+      setLoadingOldMessages(true);
+      scrollPositionRef.current = scrollTop;
+      
+      try {
+        const oldestMessage = messages[0];
+        const oldMessages = await getMessagesForChatPaginated(
+          chatInfo!.id,
+          20,
+          oldestMessage.timestamp
+        );
+        
+        if (oldMessages.length === 0) {
+          setHasMoreMessages(false);
+        } else {
+          // Convert DB messages to UI messages format
+          const uiOldMessages: Message[] = oldMessages.map((msg) => ({
+            id: msg.id,
+            content: msg.content,
+            sender: {
+              id: msg.sender_id,
+              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+            },
+            timestamp: msg.created_at,
+            status: getMessageStatus(msg, userId!, {}),
+          }));
+          setMessages(prev => [...uiOldMessages, ...prev]);
+        }
+      } catch (error) {
+        console.error('Error loading old messages:', error);
+      } finally {
+        setLoadingOldMessages(false);
+        
+        // Restore scroll position after new messages are loaded
+        setTimeout(() => {
+          if (messagesContainerRef.current) {
+            const newScrollTop = messagesContainerRef.current.scrollHeight - messagesContainerRef.current.clientHeight - scrollPositionRef.current;
+            messagesContainerRef.current.scrollTop = newScrollTop;
+          }
+        }, 100);
+      }
+    }
+  };
 
   // Fetch user on mount
   useEffect(() => {
@@ -116,10 +171,20 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     };
   }, [userId]);
 
+  // Add scroll event listener
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [messages, loadingOldMessages, hasMoreMessages, chatInfo?.id, userId, friendInfo]);
+
   // Fetch messages for this chat
   useEffect(() => {
     // Clear messages when chatId or friendId changes
     setMessages([]);
+    setHasMoreMessages(true);
     async function fetchMessages() {
       let resolvedChatId = chatId;
       // If only friendId is provided, get or create the chat and use its id
@@ -129,7 +194,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         setChatInfo(chat);
       }
       if (resolvedChatId) {
-        const dbMessages = await getMessagesForChat(resolvedChatId);
+        // Load initial messages with pagination (most recent 20 messages)
+        const dbMessages = await getMessagesForChatPaginated(resolvedChatId, 20);
         
         // Get read status for all messages
         const readStatus = await getMessageReadStatus(resolvedChatId, userId!);
@@ -146,6 +212,11 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             status: getMessageStatus(msg, userId!, readStatus),
           }))
         );
+        
+        // Check if there are more messages to load
+        if (dbMessages.length < 20) {
+          setHasMoreMessages(false);
+        }
         
         // Mark messages as read
         if (userId) {
@@ -449,7 +520,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         }
         return undefined;
       })()} />
-      <div className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-500">
             <MessageSquare className="h-16 w-16 mb-4 text-gray-300" />
@@ -458,6 +529,15 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           </div>
         ) : (
           <div className="w-full space-y-2">
+            {/* Loading old messages indicator */}
+            {loadingOldMessages && (
+              <div className="flex justify-center py-4">
+                <div className="flex items-center space-x-2 text-gray-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
+                  <span className="text-sm">Loading old messages...</span>
+                </div>
+              </div>
+            )}
             {(() => {
               const newMessageIndex = messages.findIndex(m => !readMessageIds.includes(m.id) && m.sender.id !== userId);
               return messages.map((message, idx) => {

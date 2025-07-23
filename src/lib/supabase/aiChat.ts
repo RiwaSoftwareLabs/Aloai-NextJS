@@ -168,6 +168,31 @@ export async function getMessagesForChat(chatId: string): Promise<Message[]> {
   return data as Message[];
 }
 
+// Get messages with pagination for loading old messages
+export async function getMessagesForChatPaginated(
+  chatId: string, 
+  limit: number = 20, 
+  beforeTimestamp?: string
+): Promise<Message[]> {
+  let query = supabase
+    .from('messages')
+    .select('*')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  // If beforeTimestamp is provided, get messages before that timestamp
+  if (beforeTimestamp) {
+    query = query.lt('created_at', beforeTimestamp);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  
+  // Return messages in ascending order (oldest first) for proper display
+  return (data as Message[]).reverse();
+}
+
 // List recent chats for a user (ordered by last_message_at desc)
 export async function getRecentChatsForUser(userId: string): Promise<Chat[]> {
   // User is either user_id or receiver_id
