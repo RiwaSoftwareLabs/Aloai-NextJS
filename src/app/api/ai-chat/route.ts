@@ -133,8 +133,6 @@ export async function POST(req: NextRequest) {
         openaiMessages.push({ role: 'user', content });
       }
 
-      console.log('openaiMessages:', openaiMessages);
-
       // 4. Call OpenAI
       const response = await openai.chat.completions.create({
         model,
