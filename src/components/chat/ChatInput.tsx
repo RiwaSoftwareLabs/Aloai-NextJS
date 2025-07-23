@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { uploadFile, validateFile, formatFileSize, getFileIcon } from '@/lib/supabase/fileUpload';
+import { uploadFile, validateFile, formatFileSize, getFileIcon, compressImage } from '@/lib/supabase/fileUpload';
 
 interface ChatInputProps {
   onSendMessage: (message: string, attachment?: {
@@ -27,10 +27,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   const [message, setMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<{
     file: File;
     preview?: string;
+    originalSize?: number;
+    compressedSize?: number;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t, isRTL } = useLanguage();
@@ -80,7 +83,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
     }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -91,13 +94,34 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       return;
     }
 
-    // Create preview for images
-    let preview: string | undefined;
+    // Start compression for images
     if (file.type.startsWith('image/')) {
-      preview = URL.createObjectURL(file);
+      setIsCompressing(true);
+      try {
+        const compressedFile = await compressImage(file);
+        
+        // Create preview for compressed image
+        const preview = URL.createObjectURL(compressedFile);
+        
+        setSelectedFile({ 
+          file: compressedFile, 
+          preview,
+          originalSize: file.size,
+          compressedSize: compressedFile.size
+        });
+      } catch (error) {
+        console.error('Compression failed:', error);
+        // Fallback to original file
+        const preview = URL.createObjectURL(file);
+        setSelectedFile({ file, preview });
+      } finally {
+        setIsCompressing(false);
+      }
+    } else {
+      // Non-image files don't need compression
+      setSelectedFile({ file });
     }
-
-    setSelectedFile({ file, preview });
+    
     setUploadError(null);
   };
 
@@ -159,9 +183,20 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
                 <p className="text-sm font-medium text-gray-900 truncate max-w-48">
                   {selectedFile.file.name}
                 </p>
-                <p className="text-xs text-gray-500">
-                  {formatFileSize(selectedFile.file.size)}
-                </p>
+                <div className="text-xs text-gray-500">
+                  {selectedFile.originalSize && selectedFile.compressedSize ? (
+                    <div>
+                      <span className="line-through text-gray-400">
+                        {formatFileSize(selectedFile.originalSize)}
+                      </span>
+                      <span className="ml-1 text-green-600">
+                        → {formatFileSize(selectedFile.compressedSize)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span>{formatFileSize(selectedFile.file.size)}</span>
+                  )}
+                </div>
               </div>
             </div>
             <button
@@ -171,6 +206,14 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
               <X className="h-4 w-4 text-gray-500" />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Compression progress */}
+      {isCompressing && (
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center space-x-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+          <span className="text-sm text-blue-700">{t('chat.fileUpload.compressing')}</span>
         </div>
       )}
 
@@ -186,12 +229,14 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
         <button 
           type="button"
           onClick={handleFileButtonClick}
-          disabled={isUploading}
+          disabled={isUploading || isCompressing}
           className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
           title={t('chat.fileUpload.attachFile')}
         >
           {isUploading ? (
             <Upload className="h-5 w-5 animate-pulse" />
+          ) : isCompressing ? (
+            <Upload className="h-5 w-5 animate-spin" />
           ) : (
             <Paperclip className="h-5 w-5" />
           )}

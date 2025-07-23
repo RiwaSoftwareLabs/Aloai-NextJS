@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { getCurrentUser } from './auth';
+import imageCompression from 'browser-image-compression';
 
 // Supported file types
 export const SUPPORTED_FILE_TYPES = {
@@ -15,11 +16,11 @@ export const SUPPORTED_FILE_TYPES = {
 
 export type SupportedFileType = keyof typeof SUPPORTED_FILE_TYPES;
 
-// File size limits (in bytes)
+// File size limits (in bytes) - Original file size limits before compression
 export const FILE_SIZE_LIMITS = {
-  'image/png': 10 * 1024 * 1024, // 10MB
-  'image/jpeg': 10 * 1024 * 1024, // 10MB
-  'image/jpg': 10 * 1024 * 1024, // 10MB
+  'image/png': 20 * 1024 * 1024, // 20MB (will be compressed to ~1MB)
+  'image/jpeg': 20 * 1024 * 1024, // 20MB (will be compressed to ~1MB)
+  'image/jpg': 20 * 1024 * 1024, // 20MB (will be compressed to ~1MB)
   'application/pdf': 25 * 1024 * 1024, // 25MB
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 25 * 1024 * 1024, // 25MB
   'application/vnd.ms-excel': 25 * 1024 * 1024, // 25MB
@@ -35,6 +36,63 @@ export interface FileUploadResult {
   fileType?: string;
   fileSize?: number;
 }
+
+/**
+ * Compress image file using browser-image-compression
+ */
+export const compressImage = async (file: File): Promise<File> => {
+  if (!file.type.startsWith('image/')) {
+    return file; // Return original file if not an image
+  }
+
+  try {
+    // Determine compression options based on file size
+    const fileSizeMB = file.size / (1024 * 1024);
+    let maxSizeMB = 1; // Default 1MB
+    let quality = 0.8; // Default 80% quality
+    let maxWidthOrHeight = 1024; // Default max dimension
+
+    // Adjust compression based on original file size
+    if (fileSizeMB > 10) {
+      // Large files: more aggressive compression
+      maxSizeMB = 0.8;
+      quality = 0.7;
+      maxWidthOrHeight = 800;
+    } else if (fileSizeMB > 5) {
+      // Medium files: moderate compression
+      maxSizeMB = 0.9;
+      quality = 0.75;
+      maxWidthOrHeight = 900;
+    } else if (fileSizeMB < 1) {
+      // Small files: minimal compression
+      maxSizeMB = 0.95;
+      quality = 0.85;
+      maxWidthOrHeight = 1200;
+    }
+
+    const options = {
+      maxSizeMB,
+      maxWidthOrHeight,
+      useWebWorker: true, // Use web worker for better performance
+      fileType: file.type, // Preserve original file type
+      quality,
+    };
+
+    const compressedFile = await imageCompression(file, options);
+    
+    // Log compression results
+    const originalSize = file.size;
+    const compressedSize = compressedFile.size;
+    const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+    
+    console.log(`Image compressed: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(compressedSize / 1024 / 1024).toFixed(2)}MB (${compressionRatio}% reduction)`);
+    
+    return compressedFile;
+  } catch (error) {
+    console.error('Image compression failed:', error);
+    return file; // Return original file if compression fails
+  }
+};
 
 /**
  * Validate file type and size
@@ -94,14 +152,17 @@ export const uploadFile = async (file: File): Promise<FileUploadResult> => {
       };
     }
 
+    // Compress image files before upload
+    const fileToUpload = await compressImage(file);
+    
     // Generate unique filename
-    const fileName = generateFileName(file.name);
+    const fileName = generateFileName(fileToUpload.name);
     const filePath = `chat-attachments/${user.id}/${fileName}`;
 
     // Upload file to Supabase storage
     const { error } = await supabase.storage
       .from('chat-attachments')
-      .upload(filePath, file, {
+      .upload(filePath, fileToUpload, {
         cacheControl: '3600',
         upsert: false
       });
@@ -122,9 +183,9 @@ export const uploadFile = async (file: File): Promise<FileUploadResult> => {
     return {
       success: true,
       url: urlData.publicUrl,
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size
+      fileName: file.name, // Keep original filename for display
+      fileType: fileToUpload.type,
+      fileSize: fileToUpload.size
     };
 
   } catch (error) {

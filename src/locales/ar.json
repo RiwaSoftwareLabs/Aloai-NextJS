@@ -23,12 +23,13 @@
     "fileUpload": {
       "attachFile": "إرفاق ملف",
       "uploading": "جاري الرفع...",
+      "compressing": "جاري ضغط الصورة...",
       "uploadSuccess": "تم رفع الملف بنجاح",
       "uploadError": "فشل في رفع الملف",
       "fileTooLarge": "الملف كبير جداً",
       "unsupportedType": "نوع الملف غير مدعوم",
       "supportedTypes": "المدعوم: PNG، JPEG، PDF، Excel، Word",
-      "maxSize": "الحد الأقصى: 10 ميجابايت للصور، 25 ميجابايت للمستندات"
+      "maxSize": "الحد الأقصى: 20 ميجابايت للصور (ضغط تلقائي)، 25 ميجابايت للمستندات"
     }
   },
   "sidebar": {
