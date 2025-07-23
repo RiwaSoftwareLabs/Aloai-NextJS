@@ -60,7 +60,6 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   // Refs for scroll handling
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const scrollPositionRef = useRef<number>(0);
 
   // Scroll to bottom when messages or loading changes (but not when loading old messages)
   useEffect(() => {
@@ -78,7 +77,10 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     // Load more messages when user scrolls near the top (within 100px)
     if (scrollTop < 100 && messages.length > 0) {
       setLoadingOldMessages(true);
-      scrollPositionRef.current = scrollTop;
+      
+      // Store the current scroll height and scroll position
+      const currentScrollHeight = messagesContainerRef.current.scrollHeight;
+      const currentScrollTop = messagesContainerRef.current.scrollTop;
       
       try {
         const oldestMessage = messages[0];
@@ -112,8 +114,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         // Restore scroll position after new messages are loaded
         setTimeout(() => {
           if (messagesContainerRef.current) {
-            const newScrollTop = messagesContainerRef.current.scrollHeight - messagesContainerRef.current.clientHeight - scrollPositionRef.current;
-            messagesContainerRef.current.scrollTop = newScrollTop;
+            const newScrollHeight = messagesContainerRef.current.scrollHeight;
+            const heightDifference = newScrollHeight - currentScrollHeight;
+            messagesContainerRef.current.scrollTop = currentScrollTop + heightDifference;
           }
         }, 100);
       }
