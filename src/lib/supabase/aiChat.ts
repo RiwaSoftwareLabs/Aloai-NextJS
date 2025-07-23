@@ -320,4 +320,25 @@ export function getMessageStatus(message: { id: string; sender_id: string }, use
 
   // Default to sent if not read yet
   return 'sent';
+}
+
+// Get reaction counts for a message
+export async function getMessageReactionCounts(messageId: string) {
+  const { data, error } = await supabase.rpc('get_message_reaction_counts', {
+    message_id_param: messageId
+  });
+  
+  if (error) throw error;
+  return data?.[0] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+}
+
+// Toggle reaction for a message
+export async function toggleMessageReaction(messageId: string, reactionType: 'like' | 'dislike') {
+  const { data, error } = await supabase.rpc('toggle_message_reaction', {
+    message_id_param: messageId,
+    reaction_type_param: reactionType
+  });
+  
+  if (error) throw error;
+  return data;
 } 

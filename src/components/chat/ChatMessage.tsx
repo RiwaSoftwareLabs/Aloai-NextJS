@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Check, CheckCheck, MoreVertical, Image } from 'lucide-react';
+import MessageActions from './MessageActions';
 
 interface ChatMessageProps {
   message: {
@@ -15,8 +16,18 @@ interface ChatMessageProps {
     status?: 'sent' | 'delivered' | 'read';
     isImage?: boolean;
     processingTime?: string; // Add processing time for AI messages
+    reactions?: {
+      likes_count: number;
+      dislikes_count: number;
+      user_reaction: 'like' | 'dislike' | null;
+    };
   };
   isOwn: boolean;
+  onReactionUpdate?: (messageId: string, reactions: {
+    likes_count: number;
+    dislikes_count: number;
+    user_reaction: 'like' | 'dislike' | null;
+  }) => void;
 }
 
 // Function to format message content with markdown-style formatting
@@ -52,7 +63,7 @@ const formatMessageContent = (content: string) => {
   });
 };
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpdate }) => {
   // Parse the timestamp string to a Date object
   const messageDate = new Date(message.timestamp);
   const now = new Date();
@@ -108,7 +119,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
 
   // AI/Other message - with avatar, name, and processing time
   return (
-    <div className="flex justify-start mb-6">
+    <div className="flex justify-start mb-6 group" data-message-id={message.id}>
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 via-pink-400 to-orange-400 flex items-center justify-center text-white mr-3 self-start mt-1 text-sm font-medium">
         {message.sender.name.charAt(0)}
       </div>
@@ -145,6 +156,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn }) => {
             </div>
           )}
         </div>
+        
+        {/* Message actions for friend messages */}
+        {!isOwn && message.reactions && onReactionUpdate && (
+          <MessageActions
+            messageId={message.id}
+            reactions={message.reactions}
+            onReactionUpdate={onReactionUpdate}
+          />
+        )}
       </div>
     </div>
   );

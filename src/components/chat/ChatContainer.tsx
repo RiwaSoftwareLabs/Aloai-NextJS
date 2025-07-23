@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus, getMessageReactionCounts } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -23,6 +23,11 @@ interface Message {
   timestamp: string;
   status: 'sent' | 'delivered' | 'read';
   isImage?: boolean;
+  reactions?: {
+    likes_count: number;
+    dislikes_count: number;
+    user_reaction: 'like' | 'dislike' | null;
+  };
 }
 
 // DBMessage type for messages from Supabase
@@ -101,17 +106,38 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         if (oldMessages.length === 0) {
           setHasMoreMessages(false);
         } else {
-          // Convert DB messages to UI messages format
-          const uiOldMessages: Message[] = oldMessages.map((msg) => ({
-            id: msg.id,
-            content: msg.content,
-            sender: {
-              id: msg.sender_id,
-              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-            },
-            timestamp: msg.created_at,
-            status: getMessageStatus(msg, userId!, {}),
-          }));
+          // Convert DB messages to UI messages format with reaction data
+          const uiOldMessages: Message[] = await Promise.all(
+            oldMessages.map(async (msg) => {
+              try {
+                const reactionData = await getMessageReactionCounts(msg.id);
+                return {
+                  id: msg.id,
+                  content: msg.content,
+                  sender: {
+                    id: msg.sender_id,
+                    name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+                  },
+                  timestamp: msg.created_at,
+                  status: getMessageStatus(msg, userId!, {}),
+                  reactions: reactionData,
+                };
+              } catch (error) {
+                console.error('Error fetching reaction data for old message:', error);
+                return {
+                  id: msg.id,
+                  content: msg.content,
+                  sender: {
+                    id: msg.sender_id,
+                    name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+                  },
+                  timestamp: msg.created_at,
+                  status: getMessageStatus(msg, userId!, {}),
+                  reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
+                };
+              }
+            })
+          );
           
           // Filter out duplicates before adding to state
           setMessages(prev => {
@@ -142,6 +168,21 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, []);
+
+  // Handle reaction updates
+  const handleReactionUpdate = useCallback((messageId: string, reactions: {
+    likes_count: number;
+    dislikes_count: number;
+    user_reaction: 'like' | 'dislike' | null;
+  }) => {
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, reactions } 
+          : msg
+      )
+    );
   }, []);
 
   // Fetch user on mount
@@ -225,18 +266,40 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         // Get read status for all messages
         const readStatus = await getMessageReadStatus(resolvedChatId, userId!);
         
-        setMessages(
-          (dbMessages as DBMessage[]).map((msg) => ({
-            id: msg.id,
-            content: msg.content,
-            sender: {
-              id: msg.sender_id,
-              name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
-            },
-            timestamp: msg.created_at, // Pass the ISO string
-            status: getMessageStatus(msg, userId!, readStatus),
-          }))
+        // Fetch reaction data for all messages
+        const messagesWithReactions = await Promise.all(
+          (dbMessages as DBMessage[]).map(async (msg) => {
+            try {
+              const reactionData = await getMessageReactionCounts(msg.id);
+              return {
+                id: msg.id,
+                content: msg.content,
+                sender: {
+                  id: msg.sender_id,
+                  name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+                },
+                timestamp: msg.created_at, // Pass the ISO string
+                status: getMessageStatus(msg, userId!, readStatus),
+                reactions: reactionData,
+              };
+            } catch (error) {
+              console.error('Error fetching reaction data:', error);
+              return {
+                id: msg.id,
+                content: msg.content,
+                sender: {
+                  id: msg.sender_id,
+                  name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+                },
+                timestamp: msg.created_at,
+                status: getMessageStatus(msg, userId!, readStatus),
+                reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
+              };
+            }
+          })
         );
+        
+        setMessages(messagesWithReactions);
         
         // Check if there are more messages to load
         if (dbMessages.length < 20) {
@@ -372,6 +435,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             },
             timestamp: msg.created_at, // Pass the ISO string
             status: msg.sender_id === userId ? 'sent' : 'delivered',
+            reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
           };
           
           setMessages((prev) => {
@@ -459,6 +523,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       },
       timestamp: new Date().toISOString(), // Use ISO string
       status: 'sent',
+      reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
     };
     setMessages((prev) => [...prev, optimisticMessage]);
     try {
@@ -482,13 +547,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           
           return prev.map((msg) =>
             msg.id === optimisticId
-              ? {
-                  id: data.userMsg.id,
-                  content: data.userMsg.content,
-                  sender: { id: data.userMsg.sender_id, name: 'You' },
-                  timestamp: data.userMsg.created_at, // Use ISO string
-                  status: 'sent',
-                } as Message
+                              ? {
+                    id: data.userMsg.id,
+                    content: data.userMsg.content,
+                    sender: { id: data.userMsg.sender_id, name: 'You' },
+                    timestamp: data.userMsg.created_at, // Use ISO string
+                    status: 'sent',
+                    reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
+                  } as Message
               : msg
           );
         });
@@ -503,13 +569,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             
             const newMessages = [
               ...prev,
-              {
-                id: data.aiMsg.id,
-                content: data.aiMsg.content,
-                sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
-                timestamp: data.aiMsg.created_at, // Use ISO string
-                status: 'delivered',
-              } as Message,
+                              {
+                  id: data.aiMsg.id,
+                  content: data.aiMsg.content,
+                  sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
+                  timestamp: data.aiMsg.created_at, // Use ISO string
+                  status: 'delivered',
+                  reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
+                } as Message,
             ];
             
             // Scroll to bottom for AI reply
@@ -539,16 +606,17 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           
           return prev.map((msg) =>
             msg.id === optimisticId
-              ? {
-                  id: sentMsg.id,
-                  content: sentMsg.content,
-                  sender: {
-                    id: sentMsg.sender_id,
-                    name: sentMsg.sender_id === userId ? 'You' : 'Other',
-                  },
-                  timestamp: sentMsg.created_at, // Use ISO string
-                  status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
-                } as Message
+                              ? {
+                    id: sentMsg.id,
+                    content: sentMsg.content,
+                    sender: {
+                      id: sentMsg.sender_id,
+                      name: sentMsg.sender_id === userId ? 'You' : 'Other',
+                    },
+                    timestamp: sentMsg.created_at, // Use ISO string
+                    status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
+                    reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
+                  } as Message
               : msg
           );
         });
@@ -649,7 +717,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                     )}
                     <ChatMessage 
                       message={message} 
-                      isOwn={isOwnMessage} 
+                      isOwn={isOwnMessage}
+                      onReactionUpdate={handleReactionUpdate}
                     />
                     {/* Message separator for AI conversations */}
                     {shouldShowSeparator && (
