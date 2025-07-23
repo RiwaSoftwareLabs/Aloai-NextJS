@@ -169,23 +169,38 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
     return (
       <div className="flex justify-end mb-6">
         <div className="max-w-[85%]">
-          <div className="px-4 py-3 rounded-2xl bg-blue-500 text-white">
-            {message.isImage ? (
-              <div className="relative">
-                <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" aria-label="Image icon" />
-                <div className="w-full h-40 bg-gray-200 rounded flex items-center justify-center">
-                  <p className="text-sm text-gray-500">Image</p>
+          {message.attachment && message.attachment.fileType.startsWith('image/') ? (
+            // For images, display without message background
+            <div>
+              {message.content && (
+                <div className="px-4 py-3 rounded-2xl bg-blue-500 text-white mb-2">
+                  <div className="leading-relaxed">
+                    {formatMessageContent(message.content)}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="leading-relaxed">
-                {formatMessageContent(message.content)}
-              </div>
-            )}
-            {message.attachment && (
+              )}
               <FileAttachment attachment={message.attachment} />
-            )}
-          </div>
+            </div>
+          ) : (
+            // For non-image attachments or text-only messages, use normal background
+            <div className="px-4 py-3 rounded-2xl bg-blue-500 text-white">
+              {message.isImage ? (
+                <div className="relative">
+                  <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" aria-label="Image icon" />
+                  <div className="w-full h-40 bg-gray-200 rounded flex items-center justify-center">
+                    <p className="text-sm text-gray-500">Image</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="leading-relaxed">
+                  {formatMessageContent(message.content)}
+                </div>
+              )}
+              {message.attachment && (
+                <FileAttachment attachment={message.attachment} />
+              )}
+            </div>
+          )}
           <div className="text-xs mt-2 flex items-center justify-end text-gray-400">
             <span>{isToday ? formattedTime : formattedDateTime}</span>
             <span className="ml-2">
