@@ -91,64 +91,60 @@ const FileAttachment: React.FC<{ attachment: ChatMessageProps['message']['attach
     window.open(attachment.url, '_blank');
   };
 
+  if (isImage) {
+    return (
+      <div className="mt-2 inline-block relative group">
+        <img 
+          src={attachment.url} 
+          alt={attachment.fileName}
+          className="max-w-full max-h-64 object-contain rounded-md"
+          onClick={handleOpen}
+          style={{ cursor: 'pointer' }}
+        />
+        <button
+          onClick={handleDownload}
+          className="absolute top-2 right-2 p-2 bg-black bg-opacity-50 hover:bg-opacity-70 rounded-full transition-all opacity-0 group-hover:opacity-100"
+          title="Download"
+        >
+          <Download className="h-4 w-4 text-white" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
-      {isImage ? (
-        <div className="space-y-2">
-          <img 
-            src={attachment.url} 
-            alt={attachment.fileName}
-            className="max-w-full max-h-64 object-contain rounded"
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center">
+            <span className="text-lg">{fileIcon}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {attachment.fileName}
+            </p>
+            <p className="text-xs text-gray-500">
+              {formatFileSize(attachment.fileSize)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center space-x-1">
+          <button
             onClick={handleOpen}
-            style={{ cursor: 'pointer' }}
-          />
-          <div className="flex items-center justify-between text-sm text-gray-600">
-            <span className="truncate flex-1">{attachment.fileName}</span>
-            <div className="flex items-center space-x-2">
-              <span>{formatFileSize(attachment.fileSize)}</span>
-              <button
-                onClick={handleDownload}
-                className="p-1 rounded hover:bg-gray-200 transition-colors"
-                title="Download"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center">
-              <span className="text-lg">{fileIcon}</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {attachment.fileName}
-              </p>
-              <p className="text-xs text-gray-500">
-                {formatFileSize(attachment.fileSize)}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={handleOpen}
-              className="p-1 rounded hover:bg-gray-200 transition-colors"
-              title="Open"
+            className="p-1 rounded hover:bg-gray-200 transition-colors"
+            title="Open"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </button>
+          <button
+            onClick={handleDownload}
+            className="p-1 rounded hover:bg-gray-200 transition-colors"
+            title="Download"
             >
-              <ExternalLink className="h-4 w-4" />
-            </button>
-            <button
-              onClick={handleDownload}
-              className="p-1 rounded hover:bg-gray-200 transition-colors"
-              title="Download"
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          </div>
+            <Download className="h-4 w-4" />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -235,23 +231,38 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
         </div>
         
         {/* Message content */}
-        <div className="px-4 py-3 rounded-2xl bg-gray-50 text-gray-900">
-          {message.isImage ? (
-            <div className="relative">
-              <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" aria-label="Image icon" />
-              <div className="w-full h-40 bg-gray-200 rounded flex items-center justify-center">
-                <p className="text-sm text-gray-500">Image</p>
+        {message.attachment && message.attachment.fileType.startsWith('image/') ? (
+          // For images, display without message background
+          <div>
+            {message.content && (
+              <div className="px-4 py-3 rounded-2xl bg-gray-50 text-gray-900 mb-2">
+                <div className="leading-relaxed">
+                  {formatMessageContent(message.content)}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="leading-relaxed">
-              {formatMessageContent(message.content)}
-            </div>
-          )}
-          {message.attachment && (
+            )}
             <FileAttachment attachment={message.attachment} />
-          )}
-        </div>
+          </div>
+        ) : (
+          // For non-image attachments or text-only messages, use normal background
+          <div className="px-4 py-3 rounded-2xl bg-gray-50 text-gray-900">
+            {message.isImage ? (
+              <div className="relative">
+                <Image className="h-6 w-6 text-gray-400 absolute inset-0 m-auto" aria-hidden="true" aria-label="Image icon" />
+                <div className="w-full h-40 bg-gray-200 rounded flex items-center justify-center">
+                  <p className="text-sm text-gray-500">Image</p>
+                </div>
+              </div>
+            ) : (
+              <div className="leading-relaxed">
+                {formatMessageContent(message.content)}
+              </div>
+            )}
+            {message.attachment && (
+              <FileAttachment attachment={message.attachment} />
+            )}
+          </div>
+        )}
         
         {/* Message actions for friend messages */}
         {!isOwn && message.reactions && onReactionUpdate && (
