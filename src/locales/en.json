@@ -78,6 +78,12 @@
     "cancel": "Cancel",
     "share": "Share",
     "sharing": "Sharing...",
-    "forwarded": "Forwarded"
+    "forwarded": "Forwarded",
+    "subtitle": "Share this message with friends or AI assistants",
+    "addCaption": "Add Caption",
+    "showCaption": "Add caption",
+    "hideCaption": "Hide caption",
+    "captionPlaceholder": "Write something about this image...",
+    "captionHint": "This caption will be sent with the image"
   }
 } 
