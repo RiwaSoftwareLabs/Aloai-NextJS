@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
 import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus } from '@/lib/supabase/aiChat';
@@ -48,6 +48,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [loading, setLoading] = useState(false);
   const [loadingOldMessages, setLoadingOldMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const { t } = useLanguage();
   const [userId, setUserId] = useState<string | null>(null);
   const [chatInfo, setChatInfo] = useState<Chat | undefined>(chat);
@@ -61,21 +63,27 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Scroll to bottom when messages or loading changes (but not when loading old messages)
+  // Scroll to bottom only on initial load or when new messages are added (but not when loading old messages)
   useEffect(() => {
-    if (bottomRef.current && !loadingOldMessages) {
+    if (bottomRef.current && !loadingOldMessages && isInitialLoad) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+      setIsInitialLoad(false);
     }
-  }, [messages, loading, loadingOldMessages]);
+  }, [messages, loading, loadingOldMessages, isInitialLoad]);
 
-  // Handle scroll to load old messages
-  const handleScroll = async () => {
-    if (!messagesContainerRef.current || loadingOldMessages || !hasMoreMessages) return;
+  // Handle scroll to load old messages and detect scroll position
+  const handleScroll = useCallback(async () => {
+    if (!messagesContainerRef.current) return;
 
-    const { scrollTop } = messagesContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    
+    // Check if user is at the bottom (within 10px for more precise detection)
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
+    const isScrollable = scrollHeight > clientHeight;
+    setShowScrollToBottom(!isAtBottom && isScrollable && messages.length > 0);
     
     // Load more messages when user scrolls near the top (within 100px)
-    if (scrollTop < 100 && messages.length > 0) {
+    if (scrollTop < 100 && messages.length > 0 && !loadingOldMessages && hasMoreMessages) {
       setLoadingOldMessages(true);
       
       // Store the current scroll height and scroll position
@@ -104,7 +112,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             timestamp: msg.created_at,
             status: getMessageStatus(msg, userId!, {}),
           }));
-          setMessages(prev => [...uiOldMessages, ...prev]);
+          
+          // Filter out duplicates before adding to state
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(msg => msg.id));
+            const uniqueOldMessages = uiOldMessages.filter(msg => !existingIds.has(msg.id));
+            return [...uniqueOldMessages, ...prev];
+          });
         }
       } catch (error) {
         console.error('Error loading old messages:', error);
@@ -121,7 +135,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         }, 100);
       }
     }
-  };
+  }, [loadingOldMessages, hasMoreMessages, messages, chatInfo?.id, userId, friendInfo]);
+
+  // Scroll to bottom function
+  const scrollToBottom = useCallback(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
 
   // Fetch user on mount
   useEffect(() => {
@@ -181,13 +202,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       container.addEventListener('scroll', handleScroll);
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [messages, loadingOldMessages, hasMoreMessages, chatInfo?.id, userId, friendInfo]);
+  }, [handleScroll]);
 
   // Fetch messages for this chat
   useEffect(() => {
     // Clear messages when chatId or friendId changes
     setMessages([]);
     setHasMoreMessages(true);
+    setIsInitialLoad(true); // Reset initial load flag when switching chats
     async function fetchMessages() {
       let resolvedChatId = chatId;
       // If only friendId is provided, get or create the chat and use its id
@@ -352,7 +374,23 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             status: msg.sender_id === userId ? 'sent' : 'delivered',
           };
           
-          setMessages((prev) => [...prev, newMessage]);
+          setMessages((prev) => {
+            // Check if message already exists to prevent duplicates
+            const messageExists = prev.some(msg => msg.id === newMessage.id);
+            if (messageExists) {
+              return prev;
+            }
+            const newMessages = [...prev, newMessage];
+            
+            // Scroll to bottom for new messages (not old ones)
+            setTimeout(() => {
+              if (bottomRef.current && !loadingOldMessages) {
+                bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+              }
+            }, 100);
+            
+            return newMessages;
+          });
           
           // If this is a message from someone else, mark it as read immediately
           if (msg.sender_id !== userId) {
@@ -434,29 +472,55 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         // Replace optimistic message with real user message
-        setMessages((prev) => prev.map((msg) =>
-          msg.id === optimisticId
-            ? {
-                id: data.userMsg.id,
-                content: data.userMsg.content,
-                sender: { id: data.userMsg.sender_id, name: 'You' },
-                timestamp: data.userMsg.created_at, // Use ISO string
-                status: 'sent',
-              } as Message
-            : msg
-        ));
+        setMessages((prev) => {
+          // Check if the real message already exists
+          const realMessageExists = prev.some(msg => msg.id === data.userMsg.id);
+          if (realMessageExists) {
+            // Remove the optimistic message if real message already exists
+            return prev.filter(msg => msg.id !== optimisticId);
+          }
+          
+          return prev.map((msg) =>
+            msg.id === optimisticId
+              ? {
+                  id: data.userMsg.id,
+                  content: data.userMsg.content,
+                  sender: { id: data.userMsg.sender_id, name: 'You' },
+                  timestamp: data.userMsg.created_at, // Use ISO string
+                  status: 'sent',
+                } as Message
+              : msg
+          );
+        });
         // Append AI reply
         if (data.aiMsg) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: data.aiMsg.id,
-              content: data.aiMsg.content,
-              sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
-              timestamp: data.aiMsg.created_at, // Use ISO string
-              status: 'delivered',
-            } as Message,
-          ]);
+          setMessages((prev) => {
+            // Check if AI message already exists
+            const aiMessageExists = prev.some(msg => msg.id === data.aiMsg.id);
+            if (aiMessageExists) {
+              return prev;
+            }
+            
+            const newMessages = [
+              ...prev,
+              {
+                id: data.aiMsg.id,
+                content: data.aiMsg.content,
+                sender: { id: data.aiMsg.sender_id, name: friendInfo.displayName },
+                timestamp: data.aiMsg.created_at, // Use ISO string
+                status: 'delivered',
+              } as Message,
+            ];
+            
+            // Scroll to bottom for AI reply
+            setTimeout(() => {
+              if (bottomRef.current && !loadingOldMessages) {
+                bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+              }
+            }, 100);
+            
+            return newMessages;
+          });
         }
       } else {
         // Normal user-to-user message
@@ -465,20 +529,29 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
           receiverId: friendId,
           content,
         });
-        setMessages((prev) => prev.map((msg) =>
-          msg.id === optimisticId
-            ? {
-                id: sentMsg.id,
-                content: sentMsg.content,
-                sender: {
-                  id: sentMsg.sender_id,
-                  name: sentMsg.sender_id === userId ? 'You' : 'Other',
-                },
-                timestamp: sentMsg.created_at, // Use ISO string
-                status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
-              } as Message
-            : msg
-        ));
+        setMessages((prev) => {
+          // Check if the real message already exists
+          const realMessageExists = prev.some(msg => msg.id === sentMsg.id);
+          if (realMessageExists) {
+            // Remove the optimistic message if real message already exists
+            return prev.filter(msg => msg.id !== optimisticId);
+          }
+          
+          return prev.map((msg) =>
+            msg.id === optimisticId
+              ? {
+                  id: sentMsg.id,
+                  content: sentMsg.content,
+                  sender: {
+                    id: sentMsg.sender_id,
+                    name: sentMsg.sender_id === userId ? 'You' : 'Other',
+                  },
+                  timestamp: sentMsg.created_at, // Use ISO string
+                  status: sentMsg.sender_id === userId ? 'sent' : 'delivered',
+                } as Message
+              : msg
+          );
+        });
       }
     } catch (err) {
       // Log the error for debugging
@@ -523,7 +596,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         }
         return undefined;
       })()} />
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full relative">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-500">
             <MessageSquare className="h-16 w-16 mb-4 text-gray-300" />
@@ -541,6 +614,19 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 </div>
               </div>
             )}
+            
+            {/* Scroll to bottom button */}
+            <button
+              onClick={scrollToBottom}
+              className={`fixed bottom-20 right-6 z-50 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 shadow-lg transition-all duration-300 hover:scale-110 ${
+                showScrollToBottom 
+                  ? 'opacity-100 translate-y-0' 
+                  : 'opacity-0 translate-y-2 pointer-events-none'
+              }`}
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="h-5 w-5" />
+            </button>
             {(() => {
               const newMessageIndex = messages.findIndex(m => !readMessageIds.includes(m.id) && m.sender.id !== userId);
               return messages.map((message, idx) => {
