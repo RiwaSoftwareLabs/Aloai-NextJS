@@ -187,6 +187,54 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     );
   }, []);
 
+  // Handle share success - refresh messages to show newly shared content
+  const handleShareSuccess = useCallback(() => {
+    // Trigger a refresh of messages to show newly shared content
+    if (chatInfo?.id && userId) {
+      // Invalidate cache and reload messages
+      setMessages([]);
+      setHasMoreMessages(true);
+      setIsInitialLoad(true);
+      
+      // Reload messages after a short delay to ensure the shared message is in the database
+      setTimeout(() => {
+        const fetchMessages = async () => {
+          const dbMessages = await getMessagesForChatPaginated(chatInfo.id, 15);
+          const messageIds = dbMessages.map(msg => msg.id);
+          const readStatus = await getMessageReadStatusForMessages(messageIds, userId);
+          const reactionsBatch = await getMessageReactionsBatch(messageIds);
+          
+          const messagesWithReactions = dbMessages.map((msg) => {
+            const reactionData = reactionsBatch[msg.id] || { likes_count: 0, dislikes_count: 0, user_reaction: null };
+            return {
+              id: msg.id,
+              content: msg.content,
+              sender: {
+                id: msg.sender_id,
+                name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
+              },
+              timestamp: msg.created_at,
+              status: getMessageStatus(msg, userId, readStatus),
+              attachment: msg.attachment_url ? {
+                url: msg.attachment_url,
+                fileName: msg.attachment_name || 'Unknown file',
+                fileType: msg.attachment_type || 'application/octet-stream',
+                fileSize: msg.attachment_size || 0,
+              } : undefined,
+              reactions: reactionData,
+            };
+          });
+          
+          setMessages(messagesWithReactions);
+          if (dbMessages.length < 15) {
+            setHasMoreMessages(false);
+          }
+        };
+        fetchMessages();
+      }, 500);
+    }
+  }, [chatInfo?.id, userId, friendInfo]);
+
   // Fetch user on mount
   useEffect(() => {
     async function fetchUser() {
@@ -429,6 +477,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             },
             timestamp: msg.created_at, // Pass the ISO string
             status: msg.sender_id === userId ? 'sent' : 'delivered',
+            attachment: msg.attachment_url ? {
+              url: msg.attachment_url,
+              fileName: msg.attachment_name || 'Unknown file',
+              fileType: msg.attachment_type || 'application/octet-stream',
+              fileSize: msg.attachment_size || 0,
+            } : undefined,
             reactions: { likes_count: 0, dislikes_count: 0, user_reaction: null },
           };
           
@@ -727,6 +781,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                       message={message} 
                       isOwn={isOwnMessage}
                       onReactionUpdate={handleReactionUpdate}
+                      onShareSuccess={handleShareSuccess}
                     />
                     {/* Message separator for AI conversations */}
                     {shouldShowSeparator && (

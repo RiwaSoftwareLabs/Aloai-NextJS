@@ -37,6 +37,7 @@ interface ChatMessageProps {
     dislikes_count: number;
     user_reaction: 'like' | 'dislike' | null;
   }) => void;
+  onShareSuccess?: () => void;
 }
 
 // Function to format message content with markdown-style formatting
@@ -151,7 +152,7 @@ const FileAttachment: React.FC<{ attachment: ChatMessageProps['message']['attach
   );
 };
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpdate }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpdate, onShareSuccess }) => {
   
   // Parse the timestamp string to a Date object
   const messageDate = new Date(message.timestamp);
@@ -287,6 +288,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
             message={message}
             reactions={message.reactions}
             onReactionUpdate={onReactionUpdate}
+            onShareSuccess={onShareSuccess}
           />
         )}
           </div>

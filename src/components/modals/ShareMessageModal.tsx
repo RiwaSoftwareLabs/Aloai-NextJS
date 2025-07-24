@@ -9,6 +9,7 @@ import { shareCacheService, type ShareTarget } from '@/lib/supabase/shareCache';
 interface ShareMessageModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onShareSuccess?: () => void;
   message: {
     id: string;
     content: string;
@@ -24,6 +25,7 @@ interface ShareMessageModalProps {
 const ShareMessageModal: React.FC<ShareMessageModalProps> = ({ 
   isOpen, 
   onClose, 
+  onShareSuccess,
   message 
 }) => {
   const [activeTab, setActiveTab] = useState<'friends' | 'ai'>('friends');
@@ -74,13 +76,36 @@ const ShareMessageModal: React.FC<ShareMessageModalProps> = ({
         content = imageCaption.trim();
       }
       
-      // Share to each selected target
-      for (const target of selectedTargets) {
-        await shareMessage(target, content);
-      }
+      // Share to each selected target with progress tracking and timeout
+      const sharePromises = selectedTargets.map(async (target, index) => {
+        try {
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Share timeout')), 10000)
+          );
+          
+          const sharePromise = shareMessage(target, content);
+          await Promise.race([sharePromise, timeoutPromise]);
+          
+          // Add a small delay between shares to prevent overwhelming the server
+          if (index < selectedTargets.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (error) {
+          console.error(`Error sharing to ${target.name}:`, error);
+          throw error;
+        }
+      });
+      
+      await Promise.all(sharePromises);
       
       // Invalidate cache after sharing
       invalidateCache();
+      
+      // Trigger success callback to refresh chat
+      if (onShareSuccess) {
+        onShareSuccess();
+      }
       
       // Close modal and reset
       onClose();
@@ -90,6 +115,7 @@ const ShareMessageModal: React.FC<ShareMessageModalProps> = ({
       setShowImageCaption(false);
     } catch (error) {
       console.error('Error sharing message:', error);
+      // Show error to user (you could add a toast notification here)
     } finally {
       setIsSharing(false);
     }

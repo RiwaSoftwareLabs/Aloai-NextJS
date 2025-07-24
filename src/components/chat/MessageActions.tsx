@@ -29,13 +29,15 @@ interface MessageActionsProps {
     dislikes_count: number;
     user_reaction: 'like' | 'dislike' | null;
   }) => void;
+  onShareSuccess?: () => void;
 }
 
 const MessageActions: React.FC<MessageActionsProps> = ({ 
   messageId, 
   message,
   reactions, 
-  onReactionUpdate 
+  onReactionUpdate,
+  onShareSuccess
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -141,6 +143,7 @@ const MessageActions: React.FC<MessageActionsProps> = ({
       <ShareMessageModal
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
+        onShareSuccess={onShareSuccess}
         message={message}
       />
     </>
