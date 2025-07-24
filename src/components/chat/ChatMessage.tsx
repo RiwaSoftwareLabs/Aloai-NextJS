@@ -1,10 +1,10 @@
 "use client";
 
 import React from 'react';
-import { Check, CheckCheck, MoreVertical, Image, Download, ExternalLink, Forward } from 'lucide-react';
+import { Check, CheckCheck, MoreVertical, Image, Download, ExternalLink } from 'lucide-react';
 import MessageActions from './MessageActions';
 import { getFileIcon, formatFileSize } from '@/lib/supabase/fileUpload';
-import { useLanguage } from '@/contexts/LanguageContext';
+
 
 interface ChatMessageProps {
   message: {
@@ -29,7 +29,7 @@ interface ChatMessageProps {
       dislikes_count: number;
       user_reaction: 'like' | 'dislike' | null;
     };
-    is_forwarded?: boolean;
+
   };
   isOwn: boolean;
   onReactionUpdate?: (messageId: string, reactions: {
@@ -152,7 +152,6 @@ const FileAttachment: React.FC<{ attachment: ChatMessageProps['message']['attach
 };
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpdate }) => {
-  const { t } = useLanguage();
   
   // Parse the timestamp string to a Date object
   const messageDate = new Date(message.timestamp);
@@ -207,12 +206,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
               </div>
             )}
             <div className="text-xs mt-2 flex items-center justify-end text-gray-400">
-              {message.is_forwarded && (
-                <span className="flex items-center mr-2 text-blue-500">
-                  <Forward className="h-3 w-3 mr-1" />
-                  {t('share.forwarded')}
-                </span>
-              )}
               <span>{isToday ? formattedTime : formattedDateTime}</span>
               <span className="ml-2">
                 {message.status === 'read' ? (
@@ -246,12 +239,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isOwn, onReactionUpd
                 )}
               </div>
                         <div className="flex items-center gap-2">
-            {message.is_forwarded && (
-              <span className="flex items-center text-blue-500 text-sm">
-                <Forward className="h-3 w-3 mr-1" />
-                {t('share.forwarded')}
-              </span>
-            )}
             <span className="text-sm text-gray-500">{formattedDateTime}</span>
             <button className="p-1 rounded-full hover:bg-gray-100 transition-colors opacity-0 hover:opacity-100 focus:opacity-100">
               <MoreVertical className="h-4 w-4 text-gray-400" />

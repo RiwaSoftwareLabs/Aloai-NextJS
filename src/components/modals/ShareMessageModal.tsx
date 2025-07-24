@@ -118,7 +118,6 @@ const ShareMessageModal: React.FC<ShareMessageModalProps> = ({
           name: message.attachment.fileName,
           size: message.attachment.fileSize,
         } : null,
-        isForwarded: true,
       });
     } catch (error) {
       console.error(`Error sharing to ${target.name}:`, error);
