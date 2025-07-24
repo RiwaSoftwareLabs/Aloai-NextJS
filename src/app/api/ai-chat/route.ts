@@ -99,13 +99,13 @@ export async function POST(req: NextRequest) {
 
     let aiMsg = null;
     if (isAI) {
-      // 1. Fetch last 20 messages for this chat
+      // 1. Fetch last 15 messages for this chat (optimized for performance)
       const { data: history, error: chatHistoryError } = await supabase
         .from('messages')
         .select('sender_id, content, created_at')
         .eq('chat_id', chatId)
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(15);
       if (chatHistoryError) throw chatHistoryError;
 
       // Ensure chronological order (oldest to newest)

@@ -7,7 +7,7 @@ import ChatInput from './ChatInput';
 import { MessageSquare, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
-import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatus, getMessageStatus, getMessageReactionsBatch } from '@/lib/supabase/aiChat';
+import { sendMessage, getMessagesForChatPaginated, getRecentChatsForUser, getOrCreateChatBetweenUsers, getMessageReadStatusForMessages, getMessageStatus, getMessageReactionsBatch } from '@/lib/supabase/aiChat';
 import type { Chat } from '@/lib/supabase/aiChat';
 import type { Friend } from '@/lib/supabase/friendship';
 import { supabase } from '@/lib/supabase/client';
@@ -109,7 +109,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         const oldestMessage = messages[0];
         const oldMessages = await getMessagesForChatPaginated(
           chatInfo!.id,
-          20,
+          15,
           oldestMessage.timestamp
         );
         
@@ -262,14 +262,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         setChatInfo(chat);
       }
       if (resolvedChatId) {
-        // Load initial messages with pagination (most recent 20 messages)
-        const dbMessages = await getMessagesForChatPaginated(resolvedChatId, 20);
+        // Load initial messages with pagination (most recent 15 messages for better performance)
+        const dbMessages = await getMessagesForChatPaginated(resolvedChatId, 15);
         
-        // Get read status for all messages
-        const readStatus = await getMessageReadStatus(resolvedChatId, userId!);
+        // Get read status only for loaded messages
+        const messageIds = (dbMessages as DBMessage[]).map(msg => msg.id);
+        const readStatus = await getMessageReadStatusForMessages(messageIds, userId!);
         
         // Fetch reaction data for all messages using batch operation
-        const messageIds = (dbMessages as DBMessage[]).map(msg => msg.id);
         const reactionsBatch = await getMessageReactionsBatch(messageIds);
         
         const messagesWithReactions = (dbMessages as DBMessage[]).map((msg) => {

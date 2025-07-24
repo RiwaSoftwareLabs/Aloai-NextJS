@@ -272,7 +272,30 @@ export async function getUnreadCountForChat(chatId: string, userId: string) {
   return messages.filter((m: { id: string }) => !readIds.includes(m.id)).length;
 }
 
-// Get read status for messages in a chat
+// Get read status for specific messages
+export async function getMessageReadStatusForMessages(messageIds: string[], userId: string) {
+  if (!messageIds || messageIds.length === 0) return {};
+
+  // Get read records for these specific messages
+  const { data: reads, error: readsError } = await supabase
+    .from('message_reads')
+    .select('message_id, user_id')
+    .in('message_id', messageIds)
+    .eq('user_id', userId);
+
+  if (readsError) throw readsError;
+
+  // Create a map of message_id to read status
+  const readStatus: Record<string, boolean> = {};
+  messageIds.forEach(messageId => {
+    const isRead = (reads || []).some(read => read.message_id === messageId);
+    readStatus[messageId] = isRead;
+  });
+
+  return readStatus;
+}
+
+// Get read status for messages in a chat (deprecated - use getMessageReadStatusForMessages instead)
 export async function getMessageReadStatus(chatId: string, userId: string) {
   // Get all messages in the chat
   const { data: messages, error: msgError } = await supabase
