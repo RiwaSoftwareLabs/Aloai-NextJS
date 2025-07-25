@@ -18,12 +18,6 @@ const ChatSwitchLoader: React.FC<ChatSwitchLoaderProps> = ({ friendName }) => {
         <h3 className="text-lg font-semibold text-gray-800 mb-2">
           {friendName ? `Loading ${friendName}'s chat...` : 'Loading chat...'}
         </h3>
-        <p className="text-gray-500 text-sm">Please wait while we fetch the messages</p>
-      </div>
-      
-      {/* Progress bar */}
-      <div className="w-64 bg-gray-200 rounded-full h-2 mb-6">
-        <div className="bg-blue-500 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
       </div>
       
       {/* Animated message bubbles */}
