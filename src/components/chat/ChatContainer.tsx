@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import MessageLoader from './MessageLoader';
+import ChatSwitchLoader from './ChatSwitchLoader';
 import { MessageSquare, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getCurrentUser, getUserLastSeen, formatLastSeenAgo, updateLastSeen } from '@/lib/supabase/auth';
@@ -64,6 +66,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
   const [loadingOldMessages, setLoadingOldMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isSwitchingChat, setIsSwitchingChat] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const { t } = useLanguage();
   const [userId, setUserId] = useState<string | null>(null);
@@ -91,6 +94,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     if (!messagesContainerRef.current) return;
 
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+  
     
     // Check if user is at the bottom (within 10px for more precise detection)
     const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
@@ -98,7 +102,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     setShowScrollToBottom(!isAtBottom && isScrollable && messages.length > 0);
     
     // Load more messages when user scrolls near the top (within 100px)
-    if (scrollTop < 100 && messages.length > 0 && !loadingOldMessages && hasMoreMessages) {
+    if (scrollTop < 100 && messages.length > 0 && !loadingOldMessages && hasMoreMessages && chatInfo?.id && userId) {
+      console.log('Setting loadingOldMessages to true');
       setLoadingOldMessages(true);
       
       // Store the current scroll height and scroll position
@@ -108,7 +113,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
       try {
         const oldestMessage = messages[0];
         const oldMessages = await getMessagesForChatPaginated(
-          chatInfo!.id,
+          chatInfo.id,
           15,
           oldestMessage.timestamp
         );
@@ -130,7 +135,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
                 name: msg.sender_id === userId ? 'You' : (friendInfo?.displayName || 'Unknown'),
               },
               timestamp: msg.created_at,
-              status: getMessageStatus(msg, userId!, {}),
+              status: getMessageStatus(msg, userId, {}),
               attachment: msg.attachment_url ? {
                 url: msg.attachment_url,
                 fileName: msg.attachment_name || 'Unknown file',
@@ -150,7 +155,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         }
       } catch (error) {
         console.error('Error loading old messages:', error);
+        setIsSwitchingChat(false); // Clear switching state on error
       } finally {
+        console.log('Setting loadingOldMessages to false');
         setLoadingOldMessages(false);
         
         // Restore scroll position after new messages are loaded
@@ -301,6 +308,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
     setMessages([]);
     setHasMoreMessages(true);
     setIsInitialLoad(true); // Reset initial load flag when switching chats
+    setIsSwitchingChat(true); // Set switching state when chat changes
     async function fetchMessages() {
       let resolvedChatId = chatId;
       // If only friendId is provided, get or create the chat and use its id
@@ -342,10 +350,28 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         });
         
         setMessages(messagesWithReactions);
+        setIsSwitchingChat(false); // Clear switching state when messages are loaded
         
         // Check if there are more messages to load
-        if (dbMessages.length < 20) {
+        // If we got exactly the limit, there might be more messages
+        if (dbMessages.length < 15) {
+          console.log('Setting hasMoreMessages to false - got less than 15 messages:', dbMessages.length);
           setHasMoreMessages(false);
+        } else {
+          // Check if there are actually more messages by trying to get one more
+          try {
+            const oldestMessage = dbMessages[0];
+            const moreMessages = await getMessagesForChatPaginated(
+              resolvedChatId,
+              1,
+              oldestMessage.created_at
+            );
+            console.log('Checking for more messages - found:', moreMessages.length);
+            setHasMoreMessages(moreMessages.length > 0);
+          } catch (error) {
+            console.error('Error checking for more messages:', error);
+            setHasMoreMessages(false);
+          }
         }
         
         // Mark messages as read
@@ -356,9 +382,10 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ chatId: resolvedChatId, userId }),
             });
-          } catch (error) {
-            console.error('Failed to mark messages as read:', error);
-          }
+                  } catch (error) {
+          console.error('Failed to mark messages as read:', error);
+          setIsSwitchingChat(false); // Clear switching state on error
+        }
         }
         // Trigger unread count refresh in sidebar
         window.dispatchEvent(new Event('refresh-unread-counts'));
@@ -727,7 +754,9 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
         return undefined;
       })()} />
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 bg-white w-full relative">
-        {messages.length === 0 ? (
+        {isSwitchingChat ? (
+          <ChatSwitchLoader friendName={friendInfo?.displayName} />
+        ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-500">
             <MessageSquare className="h-16 w-16 mb-4 text-gray-300" />
             <p className="text-lg font-medium">{t('chat.noMessages')}</p>
@@ -738,10 +767,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ chatId, chat, friendId })
             {/* Loading old messages indicator */}
             {loadingOldMessages && (
               <div className="flex justify-center py-4">
-                <div className="flex items-center space-x-2 text-gray-500">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
-                  <span className="text-sm">Loading old messages...</span>
-                </div>
+                <MessageLoader type="old-messages" />
               </div>
             )}
             
