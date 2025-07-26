@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Aloai - Your Personal AI Assistant",
+  title: "Aloai - Your Personal AI Brain",
   description: "Aloai provides intelligent AI agents for your personal assistance. Experience advanced messaging, AI-powered conversations, and smart features designed to enhance your daily communication and productivity.",
   icons: {
     icon: [
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     apple: '/favicon.png',
   },
   openGraph: {
-    title: "Aloai - Your Personal AI Assistant",
+    title: "Aloai - Your Personal AI Brain",
     description: "Aloai provides intelligent AI agents for your personal assistance. Experience advanced messaging, AI-powered conversations, and smart features designed to enhance your daily communication and productivity.",
     type: "website",
     images: [
@@ -33,13 +33,13 @@ export const metadata: Metadata = {
         url: '/logo-preview.png',
         width: 1200,
         height: 630,
-        alt: 'Aloai - Your Personal AI Assistant',
+        alt: 'Aloai - Your Personal AI Brain',
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Aloai - Your Personal AI Assistant",
+    title: "Aloai - Your Personal AI Brain",
     description: "Aloai provides intelligent AI agents for your personal assistance. Experience advanced messaging, AI-powered conversations, and smart features designed to enhance your daily communication and productivity.",
     images: ['/logo-preview.png'],
   },
