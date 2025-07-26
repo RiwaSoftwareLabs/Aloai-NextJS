@@ -59,13 +59,16 @@ export async function getOrCreateChatBetweenUsers(userId: string, receiverId: st
     }
   }
 
-  // Create new chat with receiver's display_name as title
+  // Try to create new chat with conflict handling
+  // Use a consistent ordering of user_id and receiver_id to prevent duplicates
+  const [smallerId, largerId] = [userId, receiverId].sort();
+  
   const { data: newChat, error: insertError } = await supabase
     .from('chats')
     .insert([
       {
-        user_id: userId,
-        receiver_id: receiverId,
+        user_id: smallerId,
+        receiver_id: largerId,
         created_by: userId,
         is_group: false,
         title: receiverDisplayName,
@@ -74,7 +77,22 @@ export async function getOrCreateChatBetweenUsers(userId: string, receiverId: st
     .select()
     .single();
 
-  if (insertError) throw insertError;
+  if (insertError) {
+    // If insert failed due to duplicate, try to fetch the existing chat again
+    if (insertError.code === '23505') { // Unique constraint violation
+      const { data: retryChats, error: retryError } = await supabase
+        .from('chats')
+        .select('*')
+        .or(`and(user_id.eq.${userId},receiver_id.eq.${receiverId}),and(user_id.eq.${receiverId},receiver_id.eq.${userId})`)
+        .eq('is_group', false)
+        .limit(1);
+      
+      if (retryError) throw retryError;
+      if (retryChats && retryChats.length > 0) return retryChats[0];
+    }
+    throw insertError;
+  }
+  
   return newChat;
 }
 
@@ -475,4 +493,164 @@ export async function getMessageReactionsBatch(messageIds: string[]): Promise<Re
 // Prefetch reactions for a list of messages
 export async function prefetchMessageReactions(messageIds: string[]): Promise<void> {
   await prefetchReactions(messageIds, getMessageReactionCounts);
+} 
+
+/**
+ * Clean up duplicate chats and ensure data consistency
+ * This function should be run once to fix existing duplicate chats
+ */
+export async function cleanupDuplicateChats() {
+  try {
+    // Step 1: Get all non-group chats
+    const { data: allChats, error: fetchError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('is_group', false);
+    
+    if (fetchError) throw fetchError;
+    
+    // Step 2: Group chats by user pair (normalized)
+    const chatGroups = new Map<string, Chat[]>();
+    
+    allChats?.forEach(chat => {
+      if (chat.receiver_id) {
+        const [smallerId, largerId] = [chat.user_id, chat.receiver_id].sort();
+        const key = `${smallerId}-${largerId}`;
+        
+        if (!chatGroups.has(key)) {
+          chatGroups.set(key, []);
+        }
+        chatGroups.get(key)!.push(chat);
+      }
+    });
+    
+    // Step 3: Process each group
+    const chatsToDelete: string[] = [];
+    const chatsToUpdate: { id: string; user_id: string; receiver_id: string }[] = [];
+    
+    for (const [key, chats] of chatGroups) {
+      if (chats.length > 1) {
+        // Sort by created_at to keep the oldest
+        chats.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        
+        const [smallerId, largerId] = key.split('-');
+        const keepChat = chats[0];
+        
+        // Mark others for deletion
+        chats.slice(1).forEach(chat => {
+          chatsToDelete.push(chat.id);
+        });
+        
+        // Update the kept chat to have consistent ordering
+        if (keepChat.user_id !== smallerId || keepChat.receiver_id !== largerId) {
+          chatsToUpdate.push({
+            id: keepChat.id,
+            user_id: smallerId,
+            receiver_id: largerId
+          });
+        }
+      } else if (chats.length === 1) {
+        // Single chat - ensure consistent ordering
+        const chat = chats[0];
+        if (chat.receiver_id) {
+          const [smallerId, largerId] = [chat.user_id, chat.receiver_id].sort();
+          
+          if (chat.user_id !== smallerId || chat.receiver_id !== largerId) {
+            chatsToUpdate.push({
+              id: chat.id,
+              user_id: smallerId,
+              receiver_id: largerId
+            });
+          }
+        }
+      }
+    }
+    
+    // Step 4: Delete duplicate chats
+    if (chatsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('chats')
+        .delete()
+        .in('id', chatsToDelete);
+      
+      if (deleteError) throw deleteError;
+      console.log(`Deleted ${chatsToDelete.length} duplicate chats`);
+    }
+    
+    // Step 5: Update chats for consistent ordering
+    for (const update of chatsToUpdate) {
+      const { error: updateError } = await supabase
+        .from('chats')
+        .update({
+          user_id: update.user_id,
+          receiver_id: update.receiver_id
+        })
+        .eq('id', update.id);
+      
+      if (updateError) throw updateError;
+    }
+    
+    if (chatsToUpdate.length > 0) {
+      console.log(`Updated ${chatsToUpdate.length} chats for consistent ordering`);
+    }
+    
+    return {
+      success: true,
+      deletedCount: chatsToDelete.length,
+      updatedCount: chatsToUpdate.length
+    };
+  } catch (error) {
+    console.error('Error cleaning up duplicate chats:', error);
+    return {
+      success: false,
+      error
+    };
+  }
+}
+
+/**
+ * Check for duplicate chats in the database
+ */
+export async function checkForDuplicateChats() {
+  try {
+    const { data: allChats, error: fetchError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('is_group', false);
+    
+    if (fetchError) throw fetchError;
+    
+    const chatGroups = new Map<string, Chat[]>();
+    
+    allChats?.forEach(chat => {
+      if (chat.receiver_id) {
+        const [smallerId, largerId] = [chat.user_id, chat.receiver_id].sort();
+        const key = `${smallerId}-${largerId}`;
+        
+        if (!chatGroups.has(key)) {
+          chatGroups.set(key, []);
+        }
+        chatGroups.get(key)!.push(chat);
+      }
+    });
+    
+    const duplicates = Array.from(chatGroups.entries())
+      .filter(([, chats]) => chats.length > 1)
+      .map(([userPair, chats]) => ({
+        userPair,
+        chatCount: chats.length,
+        chatIds: chats.map(c => c.id)
+      }));
+    
+    return {
+      totalChats: allChats?.length || 0,
+      duplicateGroups: duplicates.length,
+      duplicates
+    };
+  } catch (error) {
+    console.error('Error checking for duplicate chats:', error);
+    return {
+      error
+    };
+  }
 } 

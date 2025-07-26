@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import { getOrCreateChatBetweenUsers } from '@/lib/supabase/aiChat';
 
 const openai = new OpenAI({ apiKey: process.env.NEXT_PUBLIC_OPENAI_SECRETE_KEY! });
 
@@ -18,49 +19,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Store the user message
-    // Get or create chat
-    let chatId: string;
-    let chat;
-    {
-      // Ensure uniqueness regardless of order (user_id, receiver_id)
-      const { data: existingChats, error: findError } = await supabase
-        .from('chats')
-        .select('*')
-        .or(`and(user_id.eq.${senderId},receiver_id.eq.${receiverId}),and(user_id.eq.${receiverId},receiver_id.eq.${senderId})`)
-        .eq('is_group', false)
-        .limit(1);
-      if (findError) throw findError;
-      if (existingChats && existingChats.length > 0) {
-        chat = existingChats[0];
-      } else {
-        // Fetch receiver's display_name for chat title
-        let receiverDisplayName = 'Chat';
-        const { data: receiver } = await supabase
-          .from('users')
-          .select('display_name')
-          .eq('user_id', receiverId)
-          .single();
-        if (receiver && receiver.display_name) {
-          receiverDisplayName = receiver.display_name;
-        }
-        const { data: newChat, error: insertError } = await supabase
-          .from('chats')
-          .insert([
-            {
-              user_id: senderId,
-              receiver_id: receiverId,
-              created_by: senderId,
-              is_group: false,
-              title: receiverDisplayName,
-            },
-          ])
-          .select()
-          .single();
-        if (insertError) throw insertError;
-        chat = newChat;
-      }
-      chatId = chat.id;
-    }
+    // Get or create chat using centralized function
+    const chat = await getOrCreateChatBetweenUsers(senderId, receiverId);
+    const chatId = chat.id;
 
     // Insert user message
     const { data: userMsg, error: userMsgError } = await supabase
