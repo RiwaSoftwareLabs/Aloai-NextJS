@@ -84,7 +84,7 @@ const LoginContent = () => {
             <img src="/logo.png" alt="Aloai Logo" className="mx-auto mb-4 h-20 w-20 object-contain" />
             <h1 className="text-3xl font-bold">Welcome Back</h1>
             <p className="text-gray-500">
-              Sign in to your account to continue
+              Sign in to access your personal AI brain
             </p>
           </div>
           <div className="p-6">
