@@ -81,6 +81,7 @@ const LoginContent = () => {
       <div className="w-full max-w-md">
         <div className="bg-white border border-gray-100 shadow-lg rounded-xl overflow-hidden">
           <div className="p-6 space-y-2 text-center">
+            <img src="/logo.png" alt="Aloai Logo" className="mx-auto mb-4 h-20 w-20 object-contain" />
             <h1 className="text-3xl font-bold">Welcome Back</h1>
             <p className="text-gray-500">
               Sign in to your account to continue
@@ -110,7 +111,7 @@ const LoginContent = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-black"
                 />
               </div>
               <div className="space-y-2">
@@ -118,7 +119,7 @@ const LoginContent = () => {
                   <label htmlFor="password" className="block text-sm font-medium">Password</label>
                   <Link 
                     href="/forgot-password" 
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="text-xs text-black hover:text-black focus:text-black"
                   >
                     Forgot password?
                   </Link>
@@ -130,7 +131,7 @@ const LoginContent = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-black pr-10"
                   />
                   <button
                     type="button"
@@ -147,7 +148,7 @@ const LoginContent = () => {
               </div>
               <button 
                 type="submit" 
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-4 rounded-lg transition-all relative overflow-hidden"
+                className="w-full bg-black hover:bg-neutral-800 text-white font-medium py-3 px-4 rounded-lg transition-all relative overflow-hidden"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -167,7 +168,7 @@ const LoginContent = () => {
             <div className="text-sm text-gray-600">
               Don&apos;t have an account?{" "}
               <Link href="/register" className="text-blue-600 hover:text-blue-800 font-medium">
-                Sign up <ArrowRight className="inline h-3 w-3" />
+                <span className="text-black hover:text-black focus:text-black font-medium">Sign up <ArrowRight className="inline h-3 w-3 text-black" /></span>
               </Link>
             </div>
           </div>

@@ -79,6 +79,7 @@ function RegisterForm() {
       <div className="w-full max-w-md">
         <div className="bg-white border-0 shadow-lg rounded-lg overflow-hidden">
           <div className="p-6 space-y-2 text-center">
+            <img src="/logo.png" alt="Aloai Logo" className="mx-auto mb-4 h-20 w-20 object-contain" />
             <h1 className="text-3xl font-bold">Create Account</h1>
             <p className="text-gray-500">
               Sign up to get started with Aloai
@@ -102,7 +103,7 @@ function RegisterForm() {
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
                   autoFocus
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-black"
                 />
               </div>
               <div className="space-y-2">
@@ -114,7 +115,7 @@ function RegisterForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-black"
                 />
               </div>
               <div className="space-y-2">
@@ -126,7 +127,7 @@ function RegisterForm() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md pr-10"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md pr-10 focus:outline-none focus:ring-2 focus:ring-black focus:border-black"
                   />
                   <button
                     type="button"
@@ -150,7 +151,7 @@ function RegisterForm() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md pr-10"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md pr-10 focus:outline-none focus:ring-2 focus:ring-black focus:border-black"
                   />
                   <button
                     type="button"
@@ -167,7 +168,7 @@ function RegisterForm() {
               </div>
               <button 
                 type="submit" 
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                className="w-full bg-black hover:bg-neutral-800 text-white font-medium py-2 px-4 rounded-md transition-colors"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -184,9 +185,7 @@ function RegisterForm() {
           <div className="p-6 border-t text-center">
             <div className="text-sm text-gray-600">
               Already have an account?{" "}
-              <Link href="/login" className="text-blue-600 hover:text-blue-800 font-medium">
-                Sign in <ArrowRight className="inline h-3 w-3" />
-              </Link>
+              <Link href="/login" className="text-black hover:text-black focus:text-black font-medium"><span>Sign in <ArrowRight className="inline h-3 w-3 text-black" /></span></Link>
             </div>
           </div>
         </div>
