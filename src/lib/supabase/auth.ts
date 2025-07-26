@@ -20,8 +20,7 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
   try {
     const userMetadata = {
       ...metadata,
-      displayName,
-      emailRedirectTo: "https://www.aloai.ai"
+      displayName
     };
     
     // Step 1: Register the user with Supabase Auth
@@ -51,6 +50,52 @@ export const registerUser = async ({ email, password, displayName, metadata = {}
       if (insertError) {
         console.error('Error inserting user data into users table:', insertError);
         // Continue anyway since auth account was created successfully
+      }
+
+      // Create a ai brain for the user
+      const aiBrainArray = {
+        display_name: displayName+"'s AI Brain",
+        role_message:"You are the personal AI Brain for "+displayName+" on ALOAI. Assist "+displayName+" with any tasks, questions, and daily needs in a helpful, friendly, and context-aware manner. Learn from their chats, uploaded files, links, and instructions. Seek help from the Super AI Brain when needed. Always respect privacy, address "+displayName+" by name, and deliver clear, proactive, personalized support.",
+        email: displayName?.replace(/\s+/g, '') + "@aloai.ai",
+        password: "12345678",
+      }
+
+      const { data: aiBrainData, error: aiBrainError } = await supabase.auth.signUp({
+        email: aiBrainArray.email,
+        password: aiBrainArray.password,
+        options: {
+          data: aiBrainArray
+        }
+      });
+      if (aiBrainError) {
+        console.error('Error creating ai brain:', aiBrainError);
+      }
+      const { error: insertAiBrainError } = await supabase
+      .from('users')
+      .insert([
+        { 
+          user_type:'ai',
+          user_id: aiBrainData?.user?.id,
+          display_name: aiBrainArray.display_name,
+          email: aiBrainArray.email,
+          role_message: aiBrainArray.role_message
+        }
+      ]);
+      if (insertAiBrainError) {
+        console.error('Error inserting ai brain data into users table:', insertAiBrainError);
+      }
+      // insert friend record for the user
+      const { error: insertFriendError } = await supabase
+        .from('friendships')
+        .insert([
+          { 
+            requester_id: userId,
+            receiver_id: aiBrainData?.user?.id,
+            status: 1
+          }
+        ]);
+      if (insertFriendError) {
+        console.error('Error inserting friend record for the user:', insertFriendError);
       }
     }
     
